@@ -8,7 +8,19 @@ const { generateToken } = require('../config/passport');
 // Local Registration
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name, role, businessName } = req.body;
+    const { 
+      email, 
+      password, 
+      name, 
+      role, 
+      businessName,
+      businessEmail,
+      businessPhone,
+      location,
+      serviceHours,
+      operatingDays,
+      businessImages
+    } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -17,14 +29,26 @@ router.post('/register', async (req, res) => {
     }
 
     // Create user
-    const user = await User.create({
+    const userData = {
       email,
       password,
       name,
       role: role || 'client',
-      businessName: role === 'business' ? businessName : undefined,
       authProvider: 'local'
-    });
+    };
+
+    // Add business details if role is business
+    if (role === 'business') {
+      userData.businessName = businessName;
+      userData.businessEmail = businessEmail;
+      userData.businessPhone = businessPhone;
+      userData.location = location;
+      userData.serviceHours = serviceHours;
+      userData.operatingDays = operatingDays;
+      userData.businessImages = businessImages;
+    }
+
+    const user = await User.create(userData);
 
     const token = generateToken(user);
 

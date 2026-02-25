@@ -38,10 +38,43 @@ const userSchema = new mongoose.Schema({
     enum: ['local', 'google'],
     default: 'local'
   },
+  // Business details
   businessName: {
     type: String,
     trim: true
   },
+  businessEmail: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
+  businessPhone: {
+    type: String,
+    trim: true
+  },
+  location: {
+    address: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    zipCode: { type: String, trim: true },
+    country: { type: String, trim: true }
+  },
+  serviceHours: {
+    monday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    tuesday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    wednesday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    thursday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    friday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    saturday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
+    sunday: { open: String, close: String, isClosed: { type: Boolean, default: false } }
+  },
+  operatingDays: [{
+    type: String,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+  }],
+  businessImages: [{
+    type: String
+  }],
   phone: {
     type: String,
     trim: true
