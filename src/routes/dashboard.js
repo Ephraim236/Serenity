@@ -245,6 +245,21 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
   }
 });
 
+// Delete appointment
+router.delete('/appointments/:id', authenticate, async (req, res) => {
+  try {
+    const appointment = await Appointment.findByIdAndDelete(req.params.id);
+
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    res.json({ message: 'Appointment deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete appointment' });
+  }
+});
+
 // Get all services
 router.get('/services', authenticate, async (req, res) => {
   try {
