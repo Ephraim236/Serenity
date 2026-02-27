@@ -60,7 +60,8 @@ router.post('/register', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        businessName: user.businessName
       }
     });
   } catch (err) {
@@ -100,7 +101,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        businessName: user.businessName
       }
     });
   } catch (err) {
@@ -144,7 +146,8 @@ router.get('/me', async (req, res) => {
       email: user.email,
       name: user.name,
       role: user.role,
-      avatar: user.avatar
+      avatar: user.avatar,
+      businessName: user.businessName
     });
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
