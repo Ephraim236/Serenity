@@ -3,15 +3,24 @@ const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
+const path = require('path');
+const fs = require('fs');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
+const uploadRoutes = require('./routes/upload');
 require('./config/passport');
 
 const app = express();
 
 // Connect to MongoDB (non-blocking)
 connectDB();
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Middleware
 app.use(cors({
@@ -40,6 +49,10 @@ app.use(passport.session());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/upload', uploadRoutes);
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(uploadsDir));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -67,6 +80,7 @@ const server = app.listen(PORT, () => {
   console.log(`  - POST /api/auth/login`);
   console.log(`  - GET  /api/auth/google`);
   console.log(`  - GET  /api/dashboard/stats`);
+  console.log(`  - POST /api/upload/image`);
   console.log(`========================================`);
 });
 
