@@ -120,8 +120,16 @@ router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: '/login?error=oauth' }),
   (req, res) => {
     const token = generateToken(req.user);
+    // Determine frontend URL based on environment
+    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    
+    // If running locally, use localhost:5173
+    if (process.env.NODE_ENV !== 'production') {
+      frontendUrl = 'http://localhost:5173';
+    }
+    
     // Redirect to frontend with token
-    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/callback?token=${token}`;
+    const redirectUrl = `${frontendUrl}/auth/callback?token=${token}`;
     res.redirect(redirectUrl);
   }
 );
