@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 const Service = require('../models/Service');
+const { sendClientBookingConfirmation, sendBusinessOwnerNotification, sendBookingApprovedNotification } = require('../services/emailService');
 
 // Middleware to verify JWT
 const authenticate = (req, res, next) => {
@@ -20,6 +21,55 @@ const authenticate = (req, res, next) => {
     res.status(401).json({ error: 'Invalid token' });
   }
 };
+
+// Create a new appointment (booking)
+router.post('/appointments', authenticate, async (req, res) => {
+  try {
+    const { service, specialist, date, time, price, notes, clientName, clientEmail, clientPhone, businessId } = req.body;
+    
+    if (!businessId) {
+      return res.status(400).json({ error: 'Business ID is required' });
+    }
+    
+    // Verify the business exists
+    const business = await User.findOne({ _id: businessId, role: 'business' });
+    if (!business) {
+      return res.status(400).json({ error: 'Invalid business' });
+    }
+    
+    // Create the appointment
+    const appointment = new Appointment({
+      user: req.user.id,
+      business: businessId,
+      service,
+      specialist,
+      date: new Date(date),
+      time,
+      price: parseFloat(price) || 0,
+      notes,
+      clientName,
+      clientEmail,
+      clientPhone,
+      status: 'pending'
+    });
+    
+    await appointment.save();
+    
+    // Send confirmation email to client
+    await sendClientBookingConfirmation(appointment);
+    
+    // Send notification to the specific business owner
+    await sendBusinessOwnerNotification(appointment);
+    
+    res.status(201).json({
+      message: 'Booking created successfully',
+      appointment
+    });
+  } catch (err) {
+    console.error('Create appointment error:', err);
+    res.status(500).json({ error: 'Failed to create appointment' });
+  }
+});
 
 // Get dashboard stats
 router.get('/stats', authenticate, async (req, res) => {
@@ -237,6 +287,11 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
 
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    // Send email notification if booking is approved
+    if (status === 'confirmed') {
+      await sendBookingApprovedNotification(appointment);
     }
 
     res.json(appointment);

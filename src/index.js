@@ -9,6 +9,9 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const uploadRoutes = require('./routes/upload');
+const chatbotRoutes = require('./routes/chatbot');
+const businessRoutes = require('./routes/business');
+const { scheduleReminders } = require('./services/emailService');
 require('./config/passport');
 
 const app = express();
@@ -50,6 +53,8 @@ app.use(passport.session());
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/business', businessRoutes);
 
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir));
@@ -81,7 +86,11 @@ const server = app.listen(PORT, () => {
   console.log(`  - GET  /api/auth/google`);
   console.log(`  - GET  /api/dashboard/stats`);
   console.log(`  - POST /api/upload/image`);
+  console.log(`  - POST /api/dashboard/appointments`);
   console.log(`========================================`);
+  
+  // Start email reminder scheduler
+  scheduleReminders();
 });
 
 module.exports = app;

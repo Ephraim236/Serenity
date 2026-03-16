@@ -6,6 +6,11 @@ const appointmentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  business: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   service: {
     type: String,
     required: true
@@ -48,6 +53,10 @@ const appointmentSchema = new mongoose.Schema({
   },
   clientPhone: {
     type: String
+  },
+  reminderSent: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
