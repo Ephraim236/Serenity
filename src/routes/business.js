@@ -17,7 +17,8 @@ const DEMO_BUSINESSES = [
       city: 'Accra',
       state: 'Greater Accra',
       country: 'Ghana'
-    }
+    },
+    image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzYWxvbiUyMHNhbG9uJTIwaW50ZXJpb3J8ZW58MXx8fHwxNzAxMjM0NTY3fDA&ixlib=rb-4.1.0&q=80&w=1080'
   },
   {
     _id: 'demo-business-2',
@@ -31,7 +32,8 @@ const DEMO_BUSINESSES = [
       city: 'Tema',
       state: 'Greater Accra',
       country: 'Ghana'
-    }
+    },
+    image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxiYXJiZXIlMjBzaG9wfGVudDF8fHx8MTcwMTIzNDU2N3ww&ixlib=rb-4.1.0&q=80&w=1080'
   },
   {
     _id: 'demo-business-3',
@@ -45,7 +47,8 @@ const DEMO_BUSINESSES = [
       city: 'Accra',
       state: 'Greater Accra',
       country: 'Ghana'
-    }
+    },
+    image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzcGElMjBtYXNzYWdlfGVudDF8fHx8MTc3NDQwNzgwMHww&ixlib=rb-4.1.0&q=80&w=1080'
   }
 ];
 
@@ -65,10 +68,18 @@ const DEMO_SERVICES = [
 router.get('/', async (req, res) => {
   try {
     const businesses = await User.find({ role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays')
+      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages')
       .lean();
     
-    res.json(businesses);
+    // Add image field from businessImages array
+    const businessesWithImages = businesses.map(business => ({
+      ...business,
+      image: business.businessImages && business.businessImages.length > 0 
+        ? business.businessImages[0] 
+        : null
+    }));
+
+    res.json(businessesWithImages);
   } catch (err) {
     console.log('Using demo businesses (MongoDB not connected)');
     res.json(DEMO_BUSINESSES);
@@ -79,7 +90,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const business = await User.findOne({ _id: req.params.id, role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays')
+      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages')
       .lean();
     
     if (!business) {
@@ -93,6 +104,11 @@ router.get('/:id', async (req, res) => {
       }
       return res.status(404).json({ error: 'Business not found' });
     }
+
+    // Add image field from businessImages array
+    business.image = business.businessImages && business.businessImages.length > 0 
+      ? business.businessImages[0] 
+      : null;
     
     // Get active services for this business
     const services = await Service.find({ business: req.params.id, isActive: true }).lean();

@@ -11,6 +11,8 @@ const dashboardRoutes = require('./routes/dashboard');
 const uploadRoutes = require('./routes/upload');
 const chatbotRoutes = require('./routes/chatbot');
 const businessRoutes = require('./routes/business');
+const servicesRoutes = require('./routes/services');
+const testEmailRoutes = require('./routes/testEmail');
 const { scheduleReminders } = require('./services/emailService');
 require('./config/passport');
 
@@ -55,6 +57,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/business', businessRoutes);
+app.use('/api/services', servicesRoutes);
+app.use('/api/test-email', testEmailRoutes);
 
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir));
