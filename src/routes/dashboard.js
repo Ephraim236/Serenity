@@ -251,6 +251,25 @@ router.get('/appointments/all', authenticate, async (req, res) => {
   }
 });
 
+// Get appointments by client email
+router.get('/appointments/client', authenticate, async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.json([]);
+    }
+    
+    const appointments = await Appointment.find({ clientEmail: email })
+      .sort({ date: -1, time: 1 })
+      .lean();
+
+    res.json(appointments);
+  } catch (err) {
+    // Return empty data
+    res.json([]);
+  }
+});
+
 // Update appointment status
 router.patch('/appointments/:id', authenticate, async (req, res) => {
   try {
