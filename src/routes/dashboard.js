@@ -237,6 +237,20 @@ router.get('/appointments/today', authenticate, async (req, res) => {
   }
 });
 
+// Get all appointments
+router.get('/appointments/all', authenticate, async (req, res) => {
+  try {
+    const appointments = await Appointment.find()
+      .sort({ date: -1, time: 1 })
+      .lean();
+
+    res.json(appointments);
+  } catch (err) {
+    // Return empty data
+    res.json([]);
+  }
+});
+
 // Update appointment status
 router.patch('/appointments/:id', authenticate, async (req, res) => {
   try {
