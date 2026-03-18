@@ -150,44 +150,16 @@ router.get('/stats', authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard stats error:', err);
-    // Return demo data if database is not available
+    // Return empty data if database is not available
     res.json({
       stats: {
-        totalRevenue: 12840,
-        totalAppointments: 156,
-        activeClients: 842,
-        todayAppointments: 12,
-        growth: 12.5
+        totalRevenue: 0,
+        totalAppointments: 0,
+        activeClients: 0,
+        todayAppointments: 0,
+        growth: 0
       },
-      recentAppointments: [
-        {
-          _id: '1',
-          clientName: 'Jessica Reed',
-          service: 'Luxury Facial',
-          time: '10:30 AM',
-          status: 'confirmed',
-          specialist: 'Sarah J.',
-          date: new Date()
-        },
-        {
-          _id: '2',
-          clientName: 'Marcus Smith',
-          service: 'Deep Tissue',
-          time: '12:00 PM',
-          status: 'pending',
-          specialist: 'Michael C.',
-          date: new Date()
-        },
-        {
-          _id: '3',
-          clientName: 'Elena Gilbert',
-          service: 'Designer Haircut',
-          time: '02:15 PM',
-          status: 'in_progress',
-          specialist: 'Emma W.',
-          date: new Date()
-        }
-      ]
+      recentAppointments: []
     });
   }
 });
@@ -225,16 +197,8 @@ router.get('/revenue', authenticate, async (req, res) => {
 
     res.json(formatted);
   } catch (err) {
-    // Return demo data
-    res.json([
-      { name: 'Mon', revenue: 4000 },
-      { name: 'Tue', revenue: 3000 },
-      { name: 'Wed', revenue: 5000 },
-      { name: 'Thu', revenue: 2780 },
-      { name: 'Fri', revenue: 6890 },
-      { name: 'Sat', revenue: 8390 },
-      { name: 'Sun', revenue: 4490 }
-    ]);
+    // Return empty data if database error
+    res.json([]);
   }
 });
 
@@ -268,33 +232,8 @@ router.get('/appointments/today', authenticate, async (req, res) => {
 
     res.json(appointments);
   } catch (err) {
-    // Return demo data
-    res.json([
-      {
-        _id: '1',
-        clientName: 'Jessica Reed',
-        service: 'Luxury Facial',
-        time: '10:30 AM',
-        status: 'confirmed',
-        specialist: 'Sarah J.'
-      },
-      {
-        _id: '2',
-        clientName: 'Marcus Smith',
-        service: 'Deep Tissue',
-        time: '12:00 PM',
-        status: 'pending',
-        specialist: 'Michael C.'
-      },
-      {
-        _id: '3',
-        clientName: 'Elena Gilbert',
-        service: 'Designer Haircut',
-        time: '02:15 PM',
-        status: 'in_progress',
-        specialist: 'Emma W.'
-      }
-    ]);
+    // Return empty data
+    res.json([]);
   }
 });
 
@@ -344,13 +283,8 @@ router.get('/services', authenticate, async (req, res) => {
     const services = await Service.find({ isActive: true }).lean();
     res.json(services);
   } catch (err) {
-    // Return demo data
-    res.json([
-      { _id: '1', name: 'Luxury Facial', category: 'skin', duration: 60, price: 150 },
-      { _id: '2', name: 'Deep Tissue Massage', category: 'massage', duration: 90, price: 120 },
-      { _id: '3', name: 'Designer Haircut', category: 'hair', duration: 45, price: 85 },
-      { _id: '4', name: 'Full Spa Package', category: 'spa', duration: 180, price: 350 }
-    ]);
+    // Return empty array if database error
+    res.json([]);
   }
 });
 
