@@ -29,7 +29,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: true, // Allow all origins for mobile compatibility
+  origin: ['https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
   credentials: true
 }));
 app.use(express.json());
