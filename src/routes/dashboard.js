@@ -63,11 +63,13 @@ router.post('/appointments', authenticate, async (req, res) => {
       
       await appointment.save();
       
-      // Send confirmation email to client
-      await sendClientBookingConfirmation(appointment);
-      
-      // Send notification to the specific business owner
-      await sendBusinessOwnerNotification(appointment);
+      // Send confirmation emails asynchronously (don't wait)
+      sendClientBookingConfirmation(appointment).catch(err => 
+        console.error('Failed to send client confirmation email:', err)
+      );
+      sendBusinessOwnerNotification(appointment).catch(err => 
+        console.error('Failed to send business owner notification:', err)
+      );
     } catch (dbError) {
       // MongoDB not connected, return demo success
       console.log('MongoDB not connected, booking saved in demo mode');
@@ -335,9 +337,11 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
-    // Send email notification if booking is approved
+    // Send email notification if booking is approved (async, don't wait)
     if (status === 'confirmed') {
-      await sendBookingApprovedNotification(appointment);
+      sendBookingApprovedNotification(appointment).catch(err => 
+        console.error('Failed to send confirmation email:', err)
+      );
     }
 
     res.json(appointment);
