@@ -270,6 +270,57 @@ router.get('/appointments/client', authenticate, async (req, res) => {
   }
 });
 
+// Get appointments by date
+router.get('/appointments/by-date', authenticate, async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.json([]);
+    }
+    
+    const startDate = new Date(date + 'T00:00:00');
+    const endDate = new Date(date + 'T23:59:59');
+    
+    const appointments = await Appointment.find({
+      date: { $gte: startDate, $lte: endDate }
+    })
+    .sort({ time: 1 })
+    .lean();
+
+    res.json(appointments);
+  } catch (err) {
+    console.error('Error fetching appointments by date:', err);
+    res.json([]);
+  }
+});
+
+// Get booked appointments by business and date
+router.get('/appointments/booked', authenticate, async (req, res) => {
+  try {
+    const { businessId, date } = req.query;
+    
+    if (!businessId || !date) {
+      return res.json([]);
+    }
+    
+    const appointments = await Appointment.find({
+      business: businessId,
+      date: {
+        $gte: new Date(date + 'T00:00:00'),
+        $lte: new Date(date + 'T23:59:59')
+      },
+      status: { $in: ['pending', 'confirmed'] }
+    })
+    .select('time status')
+    .lean();
+    
+    res.json(appointments);
+  } catch (err) {
+    console.error('Error fetching booked slots:', err);
+    res.json([]);
+  }
+});
+
 // Update appointment status
 router.patch('/appointments/:id', authenticate, async (req, res) => {
   try {
