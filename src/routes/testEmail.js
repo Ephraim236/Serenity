@@ -1,6 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { sendEmail } = require('../services/emailService');
+const { sendEmail, verifyEmailConfig, isEmailConfigured } = require('../services/emailService');
+
+// Verify email configuration
+router.get('/verify', async (req, res) => {
+  try {
+    const result = await verifyEmailConfig();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Check if email is configured
+router.get('/status', (req, res) => {
+  res.json({ configured: isEmailConfigured() });
+});
 
 // Test email endpoint
 router.post('/test', async (req, res) => {
@@ -9,6 +24,10 @@ router.post('/test', async (req, res) => {
     
     if (!email) {
       return res.status(400).json({ error: 'Email address is required' });
+    }
+    
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: 'Email not configured. Please set EMAIL_PASS in .env file with a Gmail App Password.' });
     }
 
     const testEmails = {

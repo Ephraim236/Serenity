@@ -3,23 +3,66 @@ const cron = require('node-cron');
 const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 
+// Email configuration
+const getEmailConfig = () => ({
+  user: process.env.EMAIL_USER,
+  pass: process.env.EMAIL_PASS
+});
+
+// Check if email is configured
+const isEmailConfigured = () => {
+  const config = getEmailConfig();
+  return config.user && config.pass && !config.pass.includes('your-') && config.pass.length > 10;
+};
+
 // Create email transporter
 const createTransporter = () => {
+  const config = getEmailConfig();
+  
+  if (!config.user || !config.pass) {
+    throw new Error('Email credentials not configured');
+  }
+
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER || 'serenitysalon2024@gmail.com',
-      pass: process.env.EMAIL_PASS || 'your-app-password'
+      user: config.user,
+      pass: config.pass
+    },
+    tls: {
+      rejectUnauthorized: false
     }
   });
+};
+
+// Verify email configuration
+const verifyEmailConfig = async () => {
+  try {
+    if (!isEmailConfigured()) {
+      return { success: false, message: 'Email not configured. Please set EMAIL_USER and EMAIL_PASS in .env file.' };
+    }
+    
+    const transporter = createTransporter();
+    await transporter.verify();
+    return { success: true, message: 'Email configured successfully!' };
+  } catch (error) {
+    return { success: false, message: `Email configuration error: ${error.message}` };
+  }
 };
 
 // Send email helper
 const sendEmail = async (to, subject, html) => {
   try {
+    if (!isEmailConfigured()) {
+      console.log('Email not configured, skipping send to:', to);
+      return false;
+    }
+    
     const transporter = createTransporter();
+    const config = getEmailConfig();
+    
     await transporter.sendMail({
-      from: process.env.EMAIL_USER || 'serenitysalon2024@gmail.com',
+      from: config.user,
       to,
       subject,
       html
@@ -27,7 +70,7 @@ const sendEmail = async (to, subject, html) => {
     console.log(`Email sent to ${to}`);
     return true;
   } catch (error) {
-    console.error('Email sending error:', error);
+    console.error('Email sending error:', error.message);
     return false;
   }
 };
@@ -431,5 +474,7 @@ module.exports = {
   sendBookingApprovedNotification,
   sendClientReminder,
   sendBusinessOwnerReminder,
-  scheduleReminders
+  scheduleReminders,
+  verifyEmailConfig,
+  isEmailConfigured
 };
