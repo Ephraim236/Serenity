@@ -29,7 +29,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: ['https://serenity-gamma-two.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
+  origin: ['https://serenity-frontend-green.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
   credentials: true
 }));
 app.use(express.json());
