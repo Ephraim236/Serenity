@@ -23,14 +23,43 @@ const createTransporter = () => {
     throw new Error('Email credentials not configured');
   }
 
+  // Try port 465 first (SSL), fall back to 587 (TLS)
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
       user: config.user,
       pass: config.pass
     },
+    connectionTimeout: 15000,
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      versions: ['TLSv1.2', 'TLSv1.3']
+    }
+  });
+};
+
+// Alternative transporter using STARTTLS (port 587)
+const createTransporterAlt = () => {
+  const config = getEmailConfig();
+  
+  if (!config.user || !config.pass) {
+    throw new Error('Email credentials not configured');
+  }
+
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: config.user,
+      pass: config.pass
+    },
+    connectionTimeout: 15000,
+    tls: {
+      rejectUnauthorized: false,
+      versions: ['TLSv1.2', 'TLSv1.3']
     }
   });
 };
@@ -42,8 +71,19 @@ const verifyEmailConfig = async () => {
       return { success: false, message: 'Email not configured. Please set EMAIL_USER and EMAIL_PASS in .env file.' };
     }
     
-    const transporter = createTransporter();
-    await transporter.verify();
+    let transporter;
+    try {
+      transporter = createTransporter();
+      await transporter.verify();
+    } catch (firstError) {
+      // Try alternative port 587
+      try {
+        transporter = createTransporterAlt();
+        await transporter.verify();
+      } catch (secondError) {
+        throw new Error(`Could not connect to Gmail: ${firstError.message}. Network may be blocked.`);
+      }
+    }
     return { success: true, message: 'Email configured successfully!' };
   } catch (error) {
     return { success: false, message: `Email configuration error: ${error.message}` };
@@ -58,17 +98,41 @@ const sendEmail = async (to, subject, html) => {
       return false;
     }
     
-    const transporter = createTransporter();
     const config = getEmailConfig();
+    let transporter;
+    let sent = false;
     
-    await transporter.sendMail({
-      from: config.user,
-      to,
-      subject,
-      html
-    });
-    console.log(`Email sent to ${to}`);
-    return true;
+    // Try primary transporter (port 465)
+    try {
+      transporter = createTransporter();
+      await transporter.sendMail({
+        from: config.user,
+        to,
+        subject,
+        html
+      });
+      sent = true;
+    } catch (firstError) {
+      // Try alternative transporter (port 587)
+      try {
+        transporter = createTransporterAlt();
+        await transporter.sendMail({
+          from: config.user,
+          to,
+          subject,
+          html
+        });
+        sent = true;
+      } catch (secondError) {
+        console.error('Email sending failed:', firstError.message);
+      }
+    }
+    
+    if (sent) {
+      console.log(`Email sent to ${to}`);
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('Email sending error:', error.message);
     return false;
@@ -77,7 +141,7 @@ const sendEmail = async (to, subject, html) => {
 
 // Send booking confirmation to client
 const sendClientBookingConfirmation = async (appointment) => {
-  const subject = 'Booking Confirmation - Serenity Salon';
+  const subject = 'Booking Confirmation - Booqlly';
   const html = `
     <!DOCTYPE html>
     <html>
@@ -97,7 +161,7 @@ const sendClientBookingConfirmation = async (appointment) => {
       <div class="container">
         <div class="header">
           <h1>✅ Booking Confirmed!</h1>
-          <p>Thank you for booking with Serenity Salon</p>
+          <p>Thank you for booking with Booqlly</p>
         </div>
         <div class="content">
           <p>Dear <strong>${appointment.clientName}</strong>,</p>
@@ -134,7 +198,7 @@ const sendClientBookingConfirmation = async (appointment) => {
           <p>If you have any questions, feel free to contact us or use our AI chat assistant on the website.</p>
           
           <div class="footer">
-            <p>© 2026 Serenity Salon. All rights reserved.</p>
+            <p>© 2026 Booqlly. All rights reserved.</p>
             <p>Your relaxation, our priority.</p>
           </div>
         </div>
@@ -222,7 +286,7 @@ const sendBusinessOwnerNotification = async (appointment) => {
           <p>📝 Please log in to your admin dashboard to approve or decline this booking.</p>
           
           <div class="footer">
-            <p>© 2026 Serenity Salon. Admin Panel</p>
+            <p>© 2026 Booqlly. Admin Panel</p>
           </div>
         </div>
       </div>
@@ -235,7 +299,7 @@ const sendBusinessOwnerNotification = async (appointment) => {
 
 // Send booking approved notification to client
 const sendBookingApprovedNotification = async (appointment) => {
-  const subject = '🎉 Your Booking is Approved! - Serenity Salon';
+  const subject = '🎉 Your Booking is Approved! - Booqlly';
   const html = `
     <!DOCTYPE html>
     <html>
@@ -288,7 +352,7 @@ const sendBookingApprovedNotification = async (appointment) => {
           <p>If you need to reschedule or cancel, please contact us at least 24 hours in advance.</p>
           
           <div class="footer">
-            <p>© 2026 Serenity Salon. All rights reserved.</p>
+            <p>© 2026 Booqlly. All rights reserved.</p>
             <p>Your relaxation, our priority. 💆‍♀️</p>
           </div>
         </div>
@@ -302,7 +366,7 @@ const sendBookingApprovedNotification = async (appointment) => {
 
 // Send reminder email to client
 const sendClientReminder = async (appointment) => {
-  const subject = '⏰ Reminder: Your Appointment is Tomorrow! - Serenity Salon';
+  const subject = '⏰ Reminder: Your Appointment is Tomorrow! - Booqlly';
   const html = `
     <!DOCTYPE html>
     <html>
@@ -351,7 +415,7 @@ const sendClientReminder = async (appointment) => {
           <p>We look forward to seeing you!</p>
           
           <div class="footer">
-            <p>© 2026 Serenity Salon. All rights reserved.</p>
+            <p>© 2026 Booqlly. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -414,7 +478,7 @@ const sendBusinessOwnerReminder = async (appointment) => {
           </div>
           
           <div class="footer">
-            <p>© 2026 Serenity Salon. Admin Panel</p>
+            <p>© 2026 Booqlly. Admin Panel</p>
           </div>
         </div>
       </div>

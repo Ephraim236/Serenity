@@ -33,7 +33,7 @@ router.post('/test', async (req, res) => {
     const testEmails = {
       // Test booking confirmation email to client
       confirmation: {
-        subject: '🧪 Test: Booking Confirmation - Serenity Salon',
+        subject: '🧪 Test: Booking Confirmation - Booqlly',
         html: `
           <!DOCTYPE html>
           <html>
@@ -96,7 +96,7 @@ router.post('/test', async (req, res) => {
       
       // Test booking approved email
       approved: {
-        subject: '🧪 Test: Booking Approved - Serenity Salon',
+        subject: '🧪 Test: Booking Approved - Booqlly',
         html: `
           <!DOCTYPE html>
           <html>
@@ -151,7 +151,7 @@ router.post('/test', async (req, res) => {
       
       // Test reminder email
       reminder: {
-        subject: '🧪 Test: Appointment Reminder - Serenity Salon',
+        subject: '🧪 Test: Appointment Reminder - Booqlly',
         html: `
           <!DOCTYPE html>
           <html>

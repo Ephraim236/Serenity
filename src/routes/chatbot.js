@@ -71,11 +71,11 @@ Our last appointment is at 5:00 PM.`,
 
 Appointments are available from 9:00 AM to 5:00 PM.`,
 
-  'location': `Serenity Salon is located in Accra, Ghana. Visit our booking page to see our address and directions.
+  'location': `Booqlly is located in Accra, Ghana. Visit our booking page to see our address and directions.
 
 We're easily accessible and have ample parking available.`,
 
-  'address': `Serenity Salon is located in Accra, Ghana. Visit our booking page for more details on our location.`,
+  'address': `Booqlly is located in Accra, Ghana. Visit our booking page for more details on our location.`,
 
   // Contact
   'contact': `You can reach us:
@@ -89,7 +89,7 @@ We're happy to answer any questions you have!`,
 
 We're here to help with any questions!`,
 
-  'email': `You can email us at info@serenitysalon.com. We typically respond within 24 hours.
+  'email': `You can email us at info@booqlly.com. We typically respond within 24 hours.
 
 For immediate assistance, use our AI chat!`,
 
@@ -140,7 +140,7 @@ Business owners can access it from the "Admin Portal" link.`,
 Contact support if you need help setting up your business profile.`,
 
   // General
-  'hello': `Hello! 👋 Welcome to Serenity Salon! 
+  'hello': `Hello! 👋 Welcome to Booqlly! 
 
 I'm here to help you with:
 • Booking appointments
@@ -150,7 +150,7 @@ I'm here to help you with:
 
 What would you like to know?`,
 
-  'hi': `Hi there! 👋 Welcome to Serenity Salon!
+  'hi': `Hi there! 👋 Welcome to Booqlly!
 
 How can I help you today? You can ask me about:
 • Booking an appointment
@@ -166,7 +166,7 @@ How can I help you today? You can ask me about:
 • ⏰ Opening hours
 • 📍 Our location
 • 🔐 Account and login
-• And anything else about Serenity Salon!
+• And anything else about Booqlly!
 
 What would you like to know?`,
 
@@ -180,11 +180,11 @@ Is there anything else I can help you with? Feel free to ask any questions about
 
   'bye': `Goodbye! 👋 
 
-Thank you for chatting with Serenity Salon. We look forward to seeing you soon!
+Thank you for chatting with Booqlly. We look forward to seeing you soon!
 
 Remember: You can always book an appointment online 24/7!`,
 
-  'greeting': `Hello! 👋 Welcome to Serenity Salon!
+  'greeting': `Hello! 👋 Welcome to Booqlly!
 
 I'm your AI assistant and I'm here to help you with:
 • 📅 Booking appointments
