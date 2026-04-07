@@ -21,10 +21,15 @@ const app = express();
 // Connect to MongoDB (non-blocking)
 connectDB();
 
-// Create uploads directory if it doesn't exist
+// Create uploads directory if it doesn't exist (skip on Vercel read-only filesystem)
 const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  // Skip directory creation on read-only filesystems (Vercel)
+  console.log('Skipping uploads directory creation (read-only filesystem)');
 }
 
 // Middleware
