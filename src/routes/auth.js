@@ -171,7 +171,13 @@ router.get('/me', async (req, res) => {
       name: user.name,
       role: user.role,
       avatar: user.avatar,
-      businessName: user.businessName
+      businessName: user.businessName,
+      businessEmail: user.businessEmail,
+      businessPhone: user.businessPhone,
+      location: user.location,
+      serviceHours: user.serviceHours,
+      operatingDays: user.operatingDays,
+      businessImages: user.businessImages
     });
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
