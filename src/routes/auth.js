@@ -5,6 +5,22 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { generateToken } = require('../config/passport');
 
+// Middleware to verify JWT for profile routes
+const authenticate = (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
 // Local Registration
 router.post('/register', async (req, res) => {
   try {
@@ -166,6 +182,59 @@ router.get('/me', async (req, res) => {
 router.get('/google/status', (req, res) => {
   const isConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   res.json({ googleAuthAvailable: isConfigured });
+});
+
+// Update business profile
+router.put('/profile', authenticate, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const { 
+      businessName, 
+      businessEmail, 
+      businessPhone, 
+      location,
+      serviceHours,
+      operatingDays,
+      businessImages
+    } = req.body;
+    
+    // Update business profile fields
+    if (businessName !== undefined) user.businessName = businessName;
+    if (businessEmail !== undefined) user.businessEmail = businessEmail;
+    if (businessPhone !== undefined) user.businessPhone = businessPhone;
+    if (location !== undefined) user.location = location;
+    if (serviceHours !== undefined) user.serviceHours = serviceHours;
+    if (operatingDays !== undefined) user.operatingDays = operatingDays;
+    if (businessImages !== undefined) user.businessImages = businessImages;
+    
+    await user.save();
+    
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        avatar: user.avatar,
+        businessName: user.businessName,
+        businessEmail: user.businessEmail,
+        businessPhone: user.businessPhone,
+        location: user.location,
+        serviceHours: user.serviceHours,
+        operatingDays: user.operatingDays,
+        businessImages: user.businessImages
+      }
+    });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
 });
 
 module.exports = router;
