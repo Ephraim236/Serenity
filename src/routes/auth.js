@@ -193,6 +193,8 @@ router.get('/google/status', (req, res) => {
 // Update business profile
 router.put('/profile', authenticate, async (req, res) => {
   try {
+    console.log('Profile update request - user:', req.user);
+    
     const user = await User.findById(req.user.id);
     
     if (!user) {
@@ -208,6 +210,8 @@ router.put('/profile', authenticate, async (req, res) => {
       operatingDays,
       businessImages
     } = req.body;
+    
+    console.log('Updating profile with data:', { businessName, businessEmail, businessPhone });
     
     // Update business profile fields (only update if provided)
     if (businessName !== undefined) user.businessName = businessName;
@@ -234,6 +238,7 @@ router.put('/profile', authenticate, async (req, res) => {
     if (businessImages !== undefined) user.businessImages = businessImages;
     
     await user.save();
+    console.log('Profile saved successfully');
     
     res.json({
       message: 'Profile updated successfully',
@@ -254,6 +259,7 @@ router.put('/profile', authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error('Update profile error:', err);
+    console.error('Error stack:', err.stack);
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
