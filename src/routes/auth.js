@@ -25,7 +25,7 @@ const authenticate = (req, res, next) => {
 router.post('/register', async (req, res) => {
   try {
     const { 
-      email, 
+      email,
       password, 
       name, 
       role, 
