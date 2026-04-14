@@ -209,12 +209,27 @@ router.put('/profile', authenticate, async (req, res) => {
       businessImages
     } = req.body;
     
-    // Update business profile fields
+    // Update business profile fields (only update if provided)
     if (businessName !== undefined) user.businessName = businessName;
     if (businessEmail !== undefined) user.businessEmail = businessEmail;
     if (businessPhone !== undefined) user.businessPhone = businessPhone;
-    if (location !== undefined) user.location = location;
-    if (serviceHours !== undefined) user.serviceHours = serviceHours;
+    
+    // Handle location - merge with existing or set new
+    if (location !== undefined) {
+      user.location = {
+        address: location.address || '',
+        city: location.city || '',
+        state: location.state || '',
+        zipCode: location.zipCode || '',
+        country: location.country || ''
+      };
+    }
+    
+    // Handle serviceHours - ensure proper format
+    if (serviceHours !== undefined) {
+      user.serviceHours = serviceHours;
+    }
+    
     if (operatingDays !== undefined) user.operatingDays = operatingDays;
     if (businessImages !== undefined) user.businessImages = businessImages;
     
@@ -244,3 +259,4 @@ router.put('/profile', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+
