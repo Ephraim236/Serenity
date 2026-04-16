@@ -3,22 +3,27 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const https = require('https');
 
 // Check if Vercel Blob token is available (production on Vercel)
 const useBlobStorage = process.env.BLOB_READ_WRITE_TOKEN && process.env.BLOB_READ_WRITE_TOKEN !== 'your-vercel-blob-token-here';
 
+console.log('[Upload Route] Initializing with useBlobStorage:', useBlobStorage);
+if (useBlobStorage) {
+  console.log('[Upload Route] BLOB_READ_WRITE_TOKEN length:', process.env.BLOB_READ_WRITE_TOKEN?.length || 0);
+}
+
+// Configure multer
 let upload;
 
 if (useBlobStorage) {
   // Use memory storage for Vercel Blob upload (files stored in memory as buffers)
   const storage = multer.memoryStorage();
   
-  // Filter to only allow image files
   const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-
     if (extname && mimetype) {
       return cb(null, true);
     } else {
@@ -28,9 +33,7 @@ if (useBlobStorage) {
 
   upload = multer({ 
     storage: storage,
-    limits: {
-      fileSize: 5 * 1024 * 1024 // 5MB limit
-    },
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: fileFilter
   });
 } else {
@@ -38,7 +41,6 @@ if (useBlobStorage) {
   const fs = require('fs');
   const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
   
-  // Create uploads directory if it doesn't exist
   try {
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
@@ -57,12 +59,10 @@ if (useBlobStorage) {
     }
   });
 
-  // Filter to only allow image files
   const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-
     if (extname && mimetype) {
       return cb(null, true);
     } else {
@@ -72,9 +72,7 @@ if (useBlobStorage) {
 
   upload = multer({ 
     storage: storage,
-    limits: {
-      fileSize: 5 * 1024 * 1024 // 5MB limit
-    },
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: fileFilter
   });
 }
@@ -86,7 +84,6 @@ const authenticate = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
     next();
@@ -102,33 +99,72 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
+    console.log('Processing image upload:', {
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+
     let imageUrl, filename, originalName, size;
 
     if (useBlobStorage) {
-      // Dynamically import Vercel Blob SDK (ES module)
-      let blob;
-      try {
-        blob = await import('@vercel/blob');
-      } catch (e) {
-        console.error('Failed to import @vercel/blob:', e);
-        throw new Error('Vercel Blob storage not available');
-      }
-      
-      // Upload to Vercel Blob storage
+      // Upload to Vercel Blob storage using direct HTTP API
       const timestamp = Date.now();
       const randomSuffix = Math.round(Math.random() * 1E9);
       const extname = path.extname(req.file.originalname);
       const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
+      
+      const encodedPath = encodeURIComponent(blobPathname);
+      const blobUrl = `https://blob.vercel-storage.com/${encodedPath}?access=public`;
+      
+      console.log('Uploading to Vercel Blob:', blobPathname);
+      const token = process.env.BLOB_READ_WRITE_TOKEN;
+      
+      const blobResult = await new Promise((resolve, reject) => {
+        const url = new URL(blobUrl);
+        const options = {
+          hostname: url.hostname,
+          path: url.pathname + url.search,
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': req.file.mimetype
+          }
+        };
 
-      const blobResult = await blob.put(blobPathname, req.file.buffer, {
-        access: 'public',
-        contentType: req.file.mimetype
+        const request = https.request(options, (response) => {
+          let data = '';
+          response.on('data', chunk => data += chunk);
+          response.on('end', () => {
+            console.log('Vercel Blob response status:', response.statusCode);
+            console.log('Vercel Blob response body:', data);
+            if (response.statusCode >= 200 && response.statusCode < 300) {
+              try {
+                const parsed = JSON.parse(data);
+                resolve(parsed);
+              } catch (e) {
+                resolve({ url: `https://${url.hostname}/${blobPathname}` });
+              }
+            } else {
+              reject(new Error(`Blob upload failed: ${response.statusCode} - ${data}`));
+            }
+          });
+        });
+
+        request.on('error', (error) => {
+          console.error('HTTPS request error:', error);
+          reject(error);
+        });
+
+        request.write(req.file.buffer);
+        request.end();
       });
 
-      imageUrl = blobResult.url;
+      imageUrl = blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`;
       filename = blobPathname;
       originalName = req.file.originalname;
       size = req.file.size;
+      console.log('Vercel Blob upload successful:', imageUrl);
     } else {
       // Local development - file already saved to disk
       imageUrl = `/uploads/${req.file.filename}`;
@@ -146,7 +182,28 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
     });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload image' });
+    console.error('Error stack:', err.stack);
+    
+    // Determine if it's a blob storage error
+    const errorMessage = err.message || 'Failed to upload image';
+    let userMessage = 'Failed to upload image';
+    
+    if (useBlobStorage) {
+      if (err.message.includes('ENOTFOUND') || err.message.includes('EAI_AGAIN')) {
+        userMessage = 'Network error. Please check your connection and try again.';
+      } else if (err.message.includes('401') || err.message.includes('403')) {
+        userMessage = 'Upload unauthorized. Please contact support.';
+      } else if (err.message.includes('Blob upload failed')) {
+        userMessage = 'Storage service error. Please try again later.';
+      }
+    }
+    
+    res.status(500).json({ 
+      error: userMessage,
+      message: errorMessage,
+      // Only include stack in development
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    });
   }
 });
 
@@ -160,29 +217,54 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
     let images;
 
     if (useBlobStorage) {
-      // Dynamically import Vercel Blob SDK (ES module)
-      let blob;
-      try {
-        blob = await import('@vercel/blob');
-      } catch (e) {
-        console.error('Failed to import @vercel/blob:', e);
-        throw new Error('Vercel Blob storage not available');
-      }
-      
       // Upload all files to Vercel Blob storage in parallel
       const uploadPromises = req.files.map(async (file) => {
         const timestamp = Date.now();
         const randomSuffix = Math.round(Math.random() * 1E9);
         const extname = path.extname(file.originalname);
         const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
+        
+        const encodedPath = encodeURIComponent(blobPathname);
+        const blobUrl = `https://blob.vercel-storage.com/${encodedPath}?access=public`;
+        
+        const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-        const blobResult = await blob.put(blobPathname, file.buffer, {
-          access: 'public',
-          contentType: file.mimetype
+        const blobResult = await new Promise((resolve, reject) => {
+          const url = new URL(blobUrl);
+          const options = {
+            hostname: url.hostname,
+            path: url.pathname + url.search,
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': file.mimetype
+            }
+          };
+
+          const request = https.request(options, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+              if (response.statusCode >= 200 && response.statusCode < 300) {
+                try {
+                  const parsed = JSON.parse(data);
+                  resolve(parsed);
+                } catch (e) {
+                  resolve({ url: `https://${url.hostname}/${blobPathname}` });
+                }
+              } else {
+                reject(new Error(`Blob upload failed: ${response.statusCode}`));
+              }
+            });
+          });
+
+          request.on('error', (error) => reject(error));
+          request.write(file.buffer);
+          request.end();
         });
 
         return {
-          url: blobResult.url,
+          url: blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`,
           filename: blobPathname,
           originalName: file.originalname,
           size: file.size
@@ -205,8 +287,27 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
       images: images
     });
   } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload images' });
+    console.error('Multiple images upload error:', err);
+    console.error('Error stack:', err.stack);
+    
+    const errorMessage = err.message || 'Failed to upload images';
+    let userMessage = 'Failed to upload images';
+    
+    if (useBlobStorage) {
+      if (err.message.includes('ENOTFOUND') || err.message.includes('EAI_AGAIN')) {
+        userMessage = 'Network error. Please check your connection and try again.';
+      } else if (err.message.includes('401') || err.message.includes('403')) {
+        userMessage = 'Upload unauthorized. Please contact support.';
+      } else if (err.message.includes('Blob upload failed')) {
+        userMessage = 'Storage service error. Please try again later.';
+      }
+    }
+    
+    res.status(500).json({ 
+      error: userMessage,
+      message: errorMessage,
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    });
   }
 });
 
