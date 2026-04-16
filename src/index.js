@@ -21,20 +21,27 @@ const app = express();
 // Connect to MongoDB (non-blocking)
 connectDB();
 
-// Create uploads directory if it doesn't exist (skip on Vercel read-only filesystem)
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+// Determine if using Vercel Blob storage or local disk storage
+const useBlobStorage = process.env.BLOB_READ_WRITE_TOKEN && process.env.BLOB_READ_WRITE_TOKEN !== 'your-vercel-blob-token-here';
+
+if (!useBlobStorage) {
+  // Only create and serve uploads directory for local development
+  const uploadsDir = path.join(__dirname, '..', 'uploads');
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    // Serve uploaded files statically
+    app.use('/uploads', express.static(uploadsDir));
+  } catch (err) {
+    // Skip directory creation and static serving on read-only filesystems
+    console.log('Skipping uploads directory creation (read-only filesystem)');
   }
-} catch (err) {
-  // Skip directory creation on read-only filesystems (Vercel)
-  console.log('Skipping uploads directory creation (read-only filesystem)');
 }
 
 // Middleware
 app.use(cors({
-  origin: ['https://serenity-gamma-two.vercel.app', 'https://serenity-frontend-green.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
+  origin: ['https://serenity-gamma-two.vercel.app', 'https://serenity-frontend-green.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(express.json());
@@ -64,9 +71,6 @@ app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/test-email', testEmailRoutes);
-
-// Serve uploaded files statically
-app.use('/uploads', express.static(uploadsDir));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
