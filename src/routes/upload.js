@@ -95,13 +95,6 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// Import Vercel Blob SDK (only used in production)
-let put;
-if (useBlobStorage) {
-  const blob = require('@vercel/blob');
-  put = blob.put;
-}
-
 // Upload single image
 router.post('/image', authenticate, upload.single('image'), async (req, res) => {
   try {
@@ -112,13 +105,22 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
     let imageUrl, filename, originalName, size;
 
     if (useBlobStorage) {
+      // Dynamically import Vercel Blob SDK (ES module)
+      let blob;
+      try {
+        blob = await import('@vercel/blob');
+      } catch (e) {
+        console.error('Failed to import @vercel/blob:', e);
+        throw new Error('Vercel Blob storage not available');
+      }
+      
       // Upload to Vercel Blob storage
       const timestamp = Date.now();
       const randomSuffix = Math.round(Math.random() * 1E9);
       const extname = path.extname(req.file.originalname);
       const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
 
-      const blobResult = await put(blobPathname, req.file.buffer, {
+      const blobResult = await blob.put(blobPathname, req.file.buffer, {
         access: 'public',
         contentType: req.file.mimetype
       });
@@ -158,6 +160,15 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
     let images;
 
     if (useBlobStorage) {
+      // Dynamically import Vercel Blob SDK (ES module)
+      let blob;
+      try {
+        blob = await import('@vercel/blob');
+      } catch (e) {
+        console.error('Failed to import @vercel/blob:', e);
+        throw new Error('Vercel Blob storage not available');
+      }
+      
       // Upload all files to Vercel Blob storage in parallel
       const uploadPromises = req.files.map(async (file) => {
         const timestamp = Date.now();
@@ -165,7 +176,7 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
         const extname = path.extname(file.originalname);
         const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
 
-        const blobResult = await put(blobPathname, file.buffer, {
+        const blobResult = await blob.put(blobPathname, file.buffer, {
           access: 'public',
           contentType: file.mimetype
         });
