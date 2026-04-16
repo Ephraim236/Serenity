@@ -5,13 +5,14 @@ const path = require('path');
 const jwt = require('jsonwebtoken');
 const https = require('https');
 
-// Check if Vercel Blob token is available (production on Vercel)
+// Vercel Blob Configuration
+const BLOB_STORE_URL = process.env.BLOB_STORE_URL || 'https://zqh1coah23wnmtuj.public.blob.vercel-storage.com';
 const useBlobStorage = process.env.BLOB_READ_WRITE_TOKEN && process.env.BLOB_READ_WRITE_TOKEN !== 'your-vercel-blob-token-here';
 
-console.log('[Upload Route] Initializing with useBlobStorage:', useBlobStorage);
-if (useBlobStorage) {
-  console.log('[Upload Route] BLOB_READ_WRITE_TOKEN set:', !!process.env.BLOB_READ_WRITE_TOKEN);
-}
+console.log('[Upload Route] Configuration:');
+console.log('  - BLOB_STORE_URL:', BLOB_STORE_URL);
+console.log('  - useBlobStorage:', useBlobStorage);
+console.log('  - Token set:', !!process.env.BLOB_READ_WRITE_TOKEN);
 
 // Configure multer
 let upload;
@@ -114,13 +115,15 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
       const extname = path.extname(req.file.originalname);
       const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
       
-      // Encode path for URL
-      const encodedPath = encodeURIComponent(blobPathname);
-      const blobUrl = `https://blob.vercel-storage.com/${encodedPath}`;
-      
       console.log('Uploading to Vercel Blob:', blobPathname);
+      console.log('Blob store URL:', BLOB_STORE_URL);
+      
       const token = process.env.BLOB_READ_WRITE_TOKEN;
-
+      
+      // For public blob stores, we can PUT directly to the blob URL
+      // The path is relative to the store root
+      const blobUrl = `${BLOB_STORE_URL}/${blobPathname}`;
+      
       const blobResult = await new Promise((resolve, reject) => {
         const url = new URL(blobUrl);
         const options = {
@@ -144,7 +147,11 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
                 const parsed = JSON.parse(data);
                 resolve(parsed);
               } catch (e) {
-                resolve({ url: `https://${url.hostname}/${blobPathname}` });
+                // If response is not JSON, construct URL manually
+                resolve({ 
+                  url: blobUrl,
+                  pathname: blobPathname
+                });
               }
             } else {
               reject(new Error(`Blob upload failed: ${response.statusCode} - ${data}`));
@@ -161,7 +168,7 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
         request.end();
       });
 
-      imageUrl = blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`;
+      imageUrl = blobResult.url || blobUrl;
       filename = blobPathname;
       originalName = req.file.originalname;
       size = req.file.size;
@@ -212,17 +219,15 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
     let images;
 
     if (useBlobStorage) {
-      // Upload all files to Vercel Blob storage in parallel using direct HTTP
+      // Upload all files to Vercel Blob storage in parallel
       const uploadPromises = req.files.map(async (file) => {
         const timestamp = Date.now();
         const randomSuffix = Math.round(Math.random() * 1E9);
         const extname = path.extname(file.originalname);
         const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
         
-        const encodedPath = encodeURIComponent(blobPathname);
-        const blobUrl = `https://blob.vercel-storage.com/${encodedPath}`;
-        
         const token = process.env.BLOB_READ_WRITE_TOKEN;
+        const blobUrl = `${BLOB_STORE_URL}/${blobPathname}`;
 
         const blobResult = await new Promise((resolve, reject) => {
           const url = new URL(blobUrl);
@@ -245,7 +250,7 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
                   const parsed = JSON.parse(data);
                   resolve(parsed);
                 } catch (e) {
-                  resolve({ url: `https://${url.hostname}/${blobPathname}` });
+                  resolve({ url: blobUrl, pathname: blobPathname });
                 }
               } else {
                 reject(new Error(`Blob upload failed: ${response.statusCode} - ${data}`));
@@ -259,7 +264,7 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
         });
 
         return {
-          url: blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`,
+          url: blobResult.url || blobUrl,
           filename: blobPathname,
           originalName: file.originalname,
           size: file.size
