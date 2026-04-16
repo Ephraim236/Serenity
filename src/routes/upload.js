@@ -3,13 +3,14 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const https = require('https');
 
 // Check if Vercel Blob token is available (production on Vercel)
 const useBlobStorage = process.env.BLOB_READ_WRITE_TOKEN && process.env.BLOB_READ_WRITE_TOKEN !== 'your-vercel-blob-token-here';
 
 console.log('[Upload Route] Initializing with useBlobStorage:', useBlobStorage);
 if (useBlobStorage) {
-  console.log('[Upload Route] BLOB_READ_WRITE_TOKEN length:', process.env.BLOB_READ_WRITE_TOKEN?.length || 0);
+  console.log('[Upload Route] BLOB_READ_WRITE_TOKEN set:', !!process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 // Configure multer
@@ -107,32 +108,60 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
     let imageUrl, filename, originalName, size;
 
     if (useBlobStorage) {
-      // Use Vercel Blob SDK with dynamic import (handles both public and private stores)
-      let blob;
-      try {
-        blob = await import('@vercel/blob');
-        console.log('Vercel Blob SDK loaded');
-      } catch (e) {
-        console.error('Failed to load @vercel/blob:', e);
-        throw new Error('Blob storage SDK not available');
-      }
-
+      // Upload to Vercel Blob storage using direct REST API
       const timestamp = Date.now();
       const randomSuffix = Math.round(Math.random() * 1E9);
       const extname = path.extname(req.file.originalname);
       const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
-
-      console.log('Uploading to Vercel Blob:', blobPathname);
       
-      // The SDK will automatically use store's configured access level
-      // (public store → public URL; private store → signed URL)
-      const blobResult = await blob.put(blobPathname, req.file.buffer, {
-        contentType: req.file.mimetype
+      // Encode path for URL
+      const encodedPath = encodeURIComponent(blobPathname);
+      const blobUrl = `https://blob.vercel-storage.com/${encodedPath}`;
+      
+      console.log('Uploading to Vercel Blob:', blobPathname);
+      const token = process.env.BLOB_READ_WRITE_TOKEN;
+
+      const blobResult = await new Promise((resolve, reject) => {
+        const url = new URL(blobUrl);
+        const options = {
+          hostname: url.hostname,
+          path: url.pathname,
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': req.file.mimetype
+          }
+        };
+
+        const request = https.request(options, (response) => {
+          let data = '';
+          response.on('data', chunk => data += chunk);
+          response.on('end', () => {
+            console.log('Vercel Blob response status:', response.statusCode);
+            console.log('Vercel Blob response body:', data);
+            if (response.statusCode >= 200 && response.statusCode < 300) {
+              try {
+                const parsed = JSON.parse(data);
+                resolve(parsed);
+              } catch (e) {
+                resolve({ url: `https://${url.hostname}/${blobPathname}` });
+              }
+            } else {
+              reject(new Error(`Blob upload failed: ${response.statusCode} - ${data}`));
+            }
+          });
+        });
+
+        request.on('error', (error) => {
+          console.error('HTTPS request error:', error);
+          reject(error);
+        });
+
+        request.write(req.file.buffer);
+        request.end();
       });
 
-      console.log('Blob upload result:', JSON.stringify(blobResult, null, 2));
-      
-      imageUrl = blobResult.url;
+      imageUrl = blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`;
       filename = blobPathname;
       originalName = req.file.originalname;
       size = req.file.size;
@@ -161,6 +190,8 @@ router.post('/image', authenticate, upload.single('image'), async (req, res) => 
       userMessage = 'Storage access misconfigured. Please contact support.';
     } else if (err.message.includes('ENOTFOUND') || err.message.includes('EAI_AGAIN')) {
       userMessage = 'Network error. Please check your connection.';
+    } else if (err.message.includes('401') || err.message.includes('403')) {
+      userMessage = 'Upload unauthorized. Check storage token.';
     }
     
     res.status(500).json({ 
@@ -181,22 +212,54 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
     let images;
 
     if (useBlobStorage) {
-      // Load SDK once
-      const blob = await import('@vercel/blob');
-      
-      // Upload all files to Vercel Blob storage in parallel
+      // Upload all files to Vercel Blob storage in parallel using direct HTTP
       const uploadPromises = req.files.map(async (file) => {
         const timestamp = Date.now();
         const randomSuffix = Math.round(Math.random() * 1E9);
         const extname = path.extname(file.originalname);
         const blobPathname = `uploads/${timestamp}-${randomSuffix}${extname}`;
+        
+        const encodedPath = encodeURIComponent(blobPathname);
+        const blobUrl = `https://blob.vercel-storage.com/${encodedPath}`;
+        
+        const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-        const blobResult = await blob.put(blobPathname, file.buffer, {
-          contentType: file.mimetype
+        const blobResult = await new Promise((resolve, reject) => {
+          const url = new URL(blobUrl);
+          const options = {
+            hostname: url.hostname,
+            path: url.pathname,
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': file.mimetype
+            }
+          };
+
+          const request = https.request(options, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+              if (response.statusCode >= 200 && response.statusCode < 300) {
+                try {
+                  const parsed = JSON.parse(data);
+                  resolve(parsed);
+                } catch (e) {
+                  resolve({ url: `https://${url.hostname}/${blobPathname}` });
+                }
+              } else {
+                reject(new Error(`Blob upload failed: ${response.statusCode} - ${data}`));
+              }
+            });
+          });
+
+          request.on('error', (error) => reject(error));
+          request.write(file.buffer);
+          request.end();
         });
 
         return {
-          url: blobResult.url,
+          url: blobResult.url || `https://blob.vercel-storage.com/${encodedPath}`,
           filename: blobPathname,
           originalName: file.originalname,
           size: file.size
@@ -224,6 +287,8 @@ router.post('/images', authenticate, upload.array('images', 10), async (req, res
     let userMessage = 'Failed to upload images';
     if (err.message.includes('private store')) {
       userMessage = 'Storage access misconfigured. Please contact support.';
+    } else if (err.message.includes('401') || err.message.includes('403')) {
+      userMessage = 'Upload unauthorized. Check storage token.';
     }
     
     res.status(500).json({ 
