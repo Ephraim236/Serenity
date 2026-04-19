@@ -1,56 +1,36 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Filter to only allow image files
-const fileFilter = (req, file, cb) => {
-  const allowedExtensions = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
-  const mimetype = file.mimetype.startsWith('image/');
-
-  if (extname || mimetype) {
-    return cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed!'), false);
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'serenity-booking',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    transformation: [{ width: 1200, height: 1200, crop: 'limit' }]
   }
-};
+});
 
 const upload = multer({ 
   storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
-  fileFilter: fileFilter
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// Middleware to verify JWT
 const authenticate = (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
     next();
@@ -59,19 +39,14 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// Upload single image
 router.post('/image', authenticate, upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
-
-    // Return the file path that can be served statically
-    const imageUrl = `/uploads/${req.file.filename}`;
-    
     res.json({
       success: true,
-      url: imageUrl,
+      url: req.file.path,
       filename: req.file.filename,
       originalName: req.file.originalname,
       size: req.file.size
@@ -82,42 +57,22 @@ router.post('/image', authenticate, upload.single('image'), (req, res) => {
   }
 });
 
-// Upload multiple images
 router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
     }
-
     const images = req.files.map(file => ({
-      url: `/uploads/${file.filename}`,
+      url: file.path,
       filename: file.filename,
       originalName: file.originalname,
       size: file.size
     }));
-    
-    res.json({
-      success: true,
-      images: images
-    });
+    res.json({ success: true, images });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Failed to upload images' });
   }
-});
-
-// Error handling for multer
-router.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum 5MB allowed.' });
-    }
-    return res.status(400).json({ error: err.message });
-  }
-  if (err) {
-    return res.status(400).json({ error: err.message });
-  }
-  next();
 });
 
 module.exports = router;
