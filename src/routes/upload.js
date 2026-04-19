@@ -2,28 +2,48 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('cloudinary').v2;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+router.get('/health', (req, res) => {
+  res.json({
+    status: 'upload route working',
+    cloudinary: !!cloudinary,
+    timestamp: new Date().toISOString()
+  });
 });
 
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'serenity-booking',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-    transformation: [{ width: 1200, height: 1200, crop: 'limit' }]
-  }
-});
+let upload;
+let cloudinary;
 
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }
-});
+try {
+  const { CloudinaryStorage } = require('multer-storage-cloudinary');
+  cloudinary = require('cloudinary').v2;
+
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+
+  const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+      folder: 'serenity-booking',
+      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+      transformation: [{ width: 1200, height: 1200, crop: 'limit' }]
+    }
+  });
+
+  upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }
+  });
+} catch (err) {
+  console.log('Cloudinary not configured, using in-memory upload');
+  upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }
+  });
+}
 
 const authenticate = (req, res, next) => {
   try {
@@ -40,14 +60,23 @@ const authenticate = (req, res, next) => {
 };
 
 router.post('/image', authenticate, upload.single('image'), (req, res) => {
+  console.log('Upload route hit:', req.file ? 'file present' : 'no file');
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
+
+    let url = req.file.path;
+    if (!url && req.file.buffer) {
+      url = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
+
+    console.log('Upload successful, returning:', { url: url.substring(0, 50) + '...' });
+
     res.json({
       success: true,
-      url: req.file.path,
-      filename: req.file.filename,
+      url: url,
+      filename: req.file.originalname,
       originalName: req.file.originalname,
       size: req.file.size
     });
@@ -63,8 +92,8 @@ router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
       return res.status(400).json({ error: 'No images uploaded' });
     }
     const images = req.files.map(file => ({
-      url: file.path,
-      filename: file.filename,
+      url: file.path || `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+      filename: file.originalname,
       originalName: file.originalname,
       size: file.size
     }));
