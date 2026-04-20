@@ -64,10 +64,7 @@ app.use('/api/business', businessRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/test-email', testEmailRoutes);
 
-// Static file serving (local dev only)
-if (fs.existsSync(uploadsDir)) {
-  app.use('/uploads', express.static(uploadsDir));
-}
+// Note: Using base64 data URLs instead of static file serving for serverless compatibility
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,81 +1,63 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
 const jwt = require('jsonwebtoken');
 
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'upload route working',
-    cloudinary: !!cloudinary,
-    timestamp: new Date().toISOString()
-  });
+// Configure multer for image uploads (use memory storage for serverless)
+const storage = multer.memoryStorage();
+
+// Filter to only allow image files
+const fileFilter = (req, file, cb) => {
+  const allowedExtensions = /jpeg|jpg|png|gif|webp/;
+  const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
+  const mimetype = file.mimetype.startsWith('image/');
+
+  if (extname || mimetype) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only image files are allowed!'), false);
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: fileFilter
 });
 
-let upload;
-let cloudinary;
-
-try {
-  const { CloudinaryStorage } = require('multer-storage-cloudinary');
-  cloudinary = require('cloudinary').v2;
-
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-  });
-
-  const storage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-      folder: 'serenity-booking',
-      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-      transformation: [{ width: 1200, height: 1200, crop: 'limit' }]
-    }
-  });
-
-  upload = multer({
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }
-  });
-} catch (err) {
-  console.log('Cloudinary not configured, using in-memory upload');
-  upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 }
-  });
-}
-
+// Middleware to verify JWT
 const authenticate = (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    res.status(401).json({ error: 'Invalid token' });
   }
 };
 
+// Upload single image
 router.post('/image', authenticate, upload.single('image'), (req, res) => {
-  console.log('Upload route hit:', req.file ? 'file present' : 'no file');
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    let url = req.file.path;
-    if (!url && req.file.buffer) {
-      url = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-    }
-
-    console.log('Upload successful, returning:', { url: url.substring(0, 50) + '...' });
+    // Return base64 data URL for serverless compatibility
+    const base64Data = req.file.buffer.toString('base64');
+    const imageUrl = `data:${req.file.mimetype};base64,${base64Data}`;
 
     res.json({
       success: true,
-      url: url,
+      url: imageUrl,
       filename: req.file.originalname,
       originalName: req.file.originalname,
       size: req.file.size
@@ -86,22 +68,47 @@ router.post('/image', authenticate, upload.single('image'), (req, res) => {
   }
 });
 
+// Upload multiple images
 router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
     }
-    const images = req.files.map(file => ({
-      url: file.path || `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
-      filename: file.originalname,
-      originalName: file.originalname,
-      size: file.size
-    }));
-    res.json({ success: true, images });
+
+    const images = req.files.map(file => {
+      const base64Data = file.buffer.toString('base64');
+      const imageUrl = `data:${file.mimetype};base64,${base64Data}`;
+
+      return {
+        url: imageUrl,
+        filename: file.originalname,
+        originalName: file.originalname,
+        size: file.size
+      };
+    });
+
+    res.json({
+      success: true,
+      images: images
+    });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Failed to upload images' });
   }
+});
+
+// Error handling for multer
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File size too large. Maximum 5MB allowed.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  next();
 });
 
 module.exports = router;
