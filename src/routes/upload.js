@@ -4,24 +4,16 @@ const multer = require('multer');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Configure multer for image uploads (use memory storage for serverless)
+const storage = multer.memoryStorage();
 
 // Filter to only allow image files
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowedExtensions = /jpeg|jpg|png|gif|webp/;
+  const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
+  const mimetype = file.mimetype.startsWith('image/');
 
-  if (extname && mimetype) {
+  if (extname || mimetype) {
     return cb(null, true);
   } else {
     cb(new Error('Only image files are allowed!'), false);
@@ -59,13 +51,14 @@ router.post('/image', authenticate, upload.single('image'), (req, res) => {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    // Return the file path that can be served statically
-    const imageUrl = `/uploads/${req.file.filename}`;
+    // Return base64 data URL for serverless compatibility
+    const base64Data = req.file.buffer.toString('base64');
+    const imageUrl = `data:${req.file.mimetype};base64,${base64Data}`;
 
     res.json({
       success: true,
       url: imageUrl,
-      filename: req.file.filename,
+      filename: req.file.originalname,
       originalName: req.file.originalname,
       size: req.file.size
     });
@@ -82,12 +75,17 @@ router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
       return res.status(400).json({ error: 'No images uploaded' });
     }
 
-    const images = req.files.map(file => ({
-      url: `/uploads/${file.filename}`,
-      filename: file.filename,
-      originalName: file.originalname,
-      size: file.size
-    }));
+    const images = req.files.map(file => {
+      const base64Data = file.buffer.toString('base64');
+      const imageUrl = `data:${file.mimetype};base64,${base64Data}`;
+
+      return {
+        url: imageUrl,
+        filename: file.originalname,
+        originalName: file.originalname,
+        size: file.size
+      };
+    });
 
     res.json({
       success: true,
