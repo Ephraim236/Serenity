@@ -34,7 +34,7 @@ try {
 
 // Middleware
 app.use(cors({
-  origin: ['https://serenity-gamma-two.vercel.app', 'https://serenity-frontend-green.vercel.app', 'https://serenity-frontend-ftg1723m8-ephraim236s-projects.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
+  origin: ['https://serenity-gamma-two.vercel.app', 'https://serenity-frontend-green.vercel.app', 'https://serenity-frontend-2.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
   credentials: true
 }));
 app.use(express.json());
@@ -64,7 +64,10 @@ app.use('/api/business', businessRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/test-email', testEmailRoutes);
 
-// Note: Using base64 data URLs instead of static file serving for serverless compatibility
+// Static file serving (local dev only)
+if (fs.existsSync(uploadsDir)) {
+  app.use('/uploads', express.static(uploadsDir));
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
