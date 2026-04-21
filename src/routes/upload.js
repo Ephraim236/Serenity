@@ -10,7 +10,7 @@ const storage = multer.memoryStorage();
 // Filter to only allow image files
 const fileFilter = (req, file, cb) => {
   const allowedExtensions = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
+  const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase());
   const mimetype = file.mimetype.startsWith('image/');
 
   if (extname || mimetype) {
@@ -36,7 +36,7 @@ const authenticate = (req, res, next) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (err) {
@@ -64,7 +64,7 @@ router.post('/image', authenticate, upload.single('image'), (req, res) => {
     });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload image' });
+    res.status(500).json({ error: err.message || 'Failed to upload image' });
   }
 });
 
@@ -93,7 +93,7 @@ router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
     });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload images' });
+    res.status(500).json({ error: err.message || 'Failed to upload images' });
   }
 });
 
