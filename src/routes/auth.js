@@ -190,6 +190,37 @@ router.get('/google/status', (req, res) => {
   res.json({ googleAuthAvailable: isConfigured });
 });
 
+// Get business profile
+router.get('/profile', authenticate, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      businessName: user.businessName || '',
+      businessEmail: user.businessEmail || '',
+      businessPhone: user.businessPhone || '',
+      businessImage: user.businessImage || '',
+      businessImages: user.businessImages || [],
+      location: user.location || {
+        address: '',
+        city: '',
+        state: '',
+        zipCode: '',
+        country: ''
+      },
+      serviceHours: user.serviceHours || {},
+      operatingDays: user.operatingDays || []
+    });
+  } catch (err) {
+    console.error('Get profile error:', err);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
 // Update business profile
 router.put('/profile', authenticate, async (req, res) => {
   try {

@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 const Service = require('../models/Service');
 const { sendClientBookingConfirmation, sendBusinessOwnerNotification, sendBookingApprovedNotification } = require('../services/emailService');
+
+// Check if database is connected
+const isDBConnected = () => mongoose.connection.readyState === 1;
 
 // Middleware to verify JWT
 const authenticate = (req, res, next) => {
@@ -29,6 +33,26 @@ router.post('/appointments', authenticate, async (req, res) => {
     
     if (!businessId) {
       return res.status(400).json({ error: 'Business ID is required' });
+    }
+    
+    // Check if database is connected
+    if (!isDBConnected()) {
+      // Return demo success without database
+      return res.status(201).json({
+        message: 'Booking created successfully (demo mode)',
+        appointment: {
+          _id: 'demo-' + Date.now(),
+          service,
+          specialist,
+          date,
+          time,
+          price: parseFloat(price) || 0,
+          clientName,
+          clientEmail,
+          clientPhone,
+          status: 'pending'
+        }
+      });
     }
     
     // Verify the business exists (or allow demo businesses)
@@ -99,8 +123,20 @@ router.post('/appointments', authenticate, async (req, res) => {
 // Get dashboard stats
 router.get('/stats', authenticate, async (req, res) => {
   try {
-    // If user is business owner, get their specific stats
-    // For demo, we'll aggregate all data
+    // Check if database is connected
+    if (!isDBConnected()) {
+      console.log('Database not connected, returning demo data');
+      return res.json({
+        stats: {
+          totalRevenue: 0,
+          totalAppointments: 0,
+          activeClients: 0,
+          todayAppointments: 0,
+          growth: 0
+        },
+        recentAppointments: []
+      });
+    }
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -169,6 +205,10 @@ router.get('/stats', authenticate, async (req, res) => {
 // Get revenue data for charts
 router.get('/revenue', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const { period = '7' } = req.query;
     const days = parseInt(period);
 
@@ -223,6 +263,10 @@ router.get('/staff', authenticate, async (req, res) => {
 // Get today's appointments
 router.get('/appointments/today', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -242,6 +286,10 @@ router.get('/appointments/today', authenticate, async (req, res) => {
 // Get all appointments
 router.get('/appointments/all', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const appointments = await Appointment.find()
       .sort({ date: -1, time: 1 })
       .lean();
@@ -256,6 +304,10 @@ router.get('/appointments/all', authenticate, async (req, res) => {
 // Get appointments by client email
 router.get('/appointments/client', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const { email } = req.query;
     if (!email) {
       return res.json([]);
@@ -275,6 +327,10 @@ router.get('/appointments/client', authenticate, async (req, res) => {
 // Get appointments by date
 router.get('/appointments/by-date', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const { date } = req.query;
     if (!date) {
       return res.json([]);
@@ -299,6 +355,10 @@ router.get('/appointments/by-date', authenticate, async (req, res) => {
 // Get booked appointments by business and date
 router.get('/appointments/booked', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const { businessId, date } = req.query;
     
     if (!businessId || !date) {
@@ -326,6 +386,10 @@ router.get('/appointments/booked', authenticate, async (req, res) => {
 // Update appointment status
 router.patch('/appointments/:id', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
     const { status } = req.body;
     const appointment = await Appointment.findByIdAndUpdate(
       req.params.id,
@@ -353,6 +417,10 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
 // Delete appointment
 router.delete('/appointments/:id', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
     const appointment = await Appointment.findByIdAndDelete(req.params.id);
 
     if (!appointment) {
@@ -368,6 +436,10 @@ router.delete('/appointments/:id', authenticate, async (req, res) => {
 // Get all services
 router.get('/services', authenticate, async (req, res) => {
   try {
+    if (!isDBConnected()) {
+      return res.json([]);
+    }
+
     const services = await Service.find({ isActive: true }).lean();
     res.json(services);
   } catch (err) {
