@@ -34,7 +34,7 @@ try {
 
 // Middleware
 app.use(cors({
-  origin: ['https://serenity-frontend-5.onrender.com', 'http://localhost:5173', 'http://localhost:5000'],
+  origin: ['https://serenity-frontend-phi.vercel.app', 'http://localhost:5173', 'http://localhost:5000'],
   credentials: true
 }));
 app.use(express.json());
