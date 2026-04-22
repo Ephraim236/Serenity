@@ -2,8 +2,12 @@ const express = require('express');
 const router = express.Router();
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { generateToken } = require('../config/passport');
+
+// Check if database is connected
+const isDBConnected = () => mongoose.connection.readyState === 1;
 
 // Middleware to verify JWT for profile routes
 const authenticate = (req, res, next) => {
@@ -24,6 +28,12 @@ const authenticate = (req, res, next) => {
 // Local Registration
 router.post('/register', async (req, res) => {
   try {
+    // Check database connection
+    if (!isDBConnected()) {
+      console.error('Registration attempted but database not connected');
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
+
     const { 
       email,
       password, 
@@ -89,11 +99,26 @@ router.post('/register', async (req, res) => {
 // Local Login
 router.post('/login', async (req, res) => {
   try {
+    // Check database connection
+    if (!isDBConnected()) {
+      console.error('Login attempted but database not connected');
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
+
     const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
 
     // Find user with password
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Check if user has a password set (local auth)
+    if (!user.password) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
