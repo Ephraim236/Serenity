@@ -43,8 +43,10 @@ try {
 
 // Middleware
 app.use(cors({
-  origin: ['https://serenity-frontend-phi.vercel.app', 'http://localhost:5173', 'http://localhost:5000'],
-  credentials: true
+  origin: ['https://serenity-frontend-phi.vercel.app', 'https://booqlly.vercel.app', 'http://localhost:5173', 'http://localhost:5000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
