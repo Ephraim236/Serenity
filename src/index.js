@@ -15,12 +15,21 @@ const businessRoutes = require('./routes/business');
 const servicesRoutes = require('./routes/services');
 const testEmailRoutes = require('./routes/testEmail');
 const { scheduleReminders } = require('./services/emailService');
-require('./config/passport');
+
+// Load passport config with error handling
+try {
+  require('./config/passport');
+} catch (err) {
+  console.error('Failed to load passport config:', err.message);
+}
 
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB with error handling
+connectDB().catch(err => {
+  console.error('MongoDB connection failed:', err.message);
+  console.log('Server will continue in demo mode');
+});
 
 // Create uploads directory for local dev (ignore errors on read-only FS)
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -88,7 +97,15 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  scheduleReminders();
+  
+  // Start scheduled reminders with error handling
+  try {
+    scheduleReminders();
+    console.log('Reminder scheduler started');
+  } catch (err) {
+    console.error('Failed to start reminder scheduler:', err.message);
+    console.log('Server will continue without reminders');
+  }
 });
 
 module.exports = app;

@@ -67,21 +67,24 @@ const DEMO_SERVICES = [
 // Get all active businesses
 router.get('/', async (req, res) => {
   try {
+    console.log('Fetching businesses...');
     const businesses = await User.find({ role: 'business' })
       .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages')
       .lean();
-    
+
+    console.log(`Found ${businesses.length} businesses`);
+
     // Add image field from businessImages array
     const businessesWithImages = businesses.map(business => ({
       ...business,
-      image: business.businessImages && business.businessImages.length > 0 
-        ? business.businessImages[0] 
+      image: business.businessImages && business.businessImages.length > 0
+        ? business.businessImages[0]
         : null
     }));
 
     res.json(businessesWithImages);
   } catch (err) {
-    console.log('Using demo businesses (MongoDB not connected)');
+    console.log('Database error, using demo businesses:', err.message);
     res.json(DEMO_BUSINESSES);
   }
 });
