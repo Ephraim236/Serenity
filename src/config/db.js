@@ -4,12 +4,15 @@ const connectDB = async () => {
   const mongoUri = process.env.MONGODB_URI;
   
   // Check if MongoDB URI is configured
-  if (!mongoUri) {
-    console.log('MONGODB_URI not configured - server running in demo mode');
-    console.log('Environment:', process.env.NODE_ENV);
-    console.log('Available env vars:', Object.keys(process.env).filter(k => k.includes('MONGO') || k.includes('DB') || k.includes('DATABASE')));
-    return false;
-  }
+
+  if(!mongoUri) return Promise.resolve(false);
+  // if (mongoUri) {
+  //   console.log('Attempting to connect to MongoDB...', mongoUri);
+  //   console.log('MONGODB_URI not configured - server running in demo mode');
+  //   console.log('Environment:', process.env.NODE_ENV);
+  //   console.log('Available env vars:', Object.keys(process.env).filter(k => k.includes('MONGO') || k.includes('DB') || k.includes('DATABASE')));
+  //   return false;
+  // }
   
   // Check if already connected
   if (mongoose.connection.readyState === 1) {

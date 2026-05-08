@@ -5,6 +5,7 @@ const session = require('express-session');
 const passport = require('passport');
 const path = require('path');
 const fs = require('fs');
+const MongoClient = require('mongodb').MongoClient
 
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
@@ -27,7 +28,8 @@ const app = express();
 
 // Connect to MongoDB with error handling
 connectDB().catch(err => {
-  console.error('MongoDB connection failed:', err.message);
+  console.log('MongoDB connection error:', err.message);
+  console.error('MongoDB connection failed:', err);
   console.log('Server will continue in demo mode');
 });
 

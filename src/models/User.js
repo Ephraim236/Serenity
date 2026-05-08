@@ -57,7 +57,10 @@ const userSchema = new mongoose.Schema({
     city: { type: String, trim: true },
     state: { type: String, trim: true },
     zipCode: { type: String, trim: true },
-    country: { type: String, trim: true }
+    country: { type: String, trim: true },
+    // GPS coordinates for maps
+    latitude: { type: Number },
+    longitude: { type: Number }
   },
   serviceHours: {
     monday: { open: String, close: String, isClosed: { type: Boolean, default: false } },
@@ -85,6 +88,26 @@ const userSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date
+  },
+  // Business rating fields
+  averageRating: {
+    type: Number,
+    min: 0,
+    max: 5,
+    default: 0
+  },
+  reviewCount: {
+    type: Number,
+    default: 0
+  },
+  // Password reset fields
+  resetPasswordToken: {
+    type: String,
+    select: false
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false
   }
 }, {
   timestamps: true

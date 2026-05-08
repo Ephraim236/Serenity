@@ -531,6 +531,56 @@ const scheduleReminders = () => {
   });
 };
 
+// Send password reset email
+const sendPasswordResetEmail = async (email, resetUrl) => {
+  const subject = 'Password Reset Request - Booqlly';
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .detail-label { font-weight: bold; color: #667eea; }
+        .btn { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #888; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🔐 Password Reset Request</h1>
+          <p>We received a request to reset your password</p>
+        </div>
+        <div class="content">
+          <p>Hello,</p>
+          <p>You're receiving this email because we received a password reset request for your account.</p>
+          <p>Click the button below to reset your password. This link will expire in 1 hour for security reasons.</p>
+          
+          <div style="text-align: center;">
+            <a href="${resetUrl}" class="btn">Reset Password</a>
+          </div>
+          
+          <p>If you didn't request a password reset, please ignore this email or contact support if you have concerns.</p>
+          <p>This password reset link will expire in 1 hour.</p>
+          
+          <div class="footer">
+            <p>© 2026 Booqlly. All rights reserved.</p>
+            <p>Your relaxation, our priority.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  return sendEmail(email, subject, html);
+};
+
 module.exports = {
   sendEmail,
   sendClientBookingConfirmation,
@@ -540,5 +590,6 @@ module.exports = {
   sendBusinessOwnerReminder,
   scheduleReminders,
   verifyEmailConfig,
-  isEmailConfigured
+  isEmailConfigured,
+  sendPasswordResetEmail
 };

@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const jwt = require('jsonwebtoken');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
-// Middleware to verify JWT
+// Middleware to verify JWT (for business owner routes)
 const authenticate = (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -12,6 +11,7 @@ const authenticate = (req, res, next) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
     next();
@@ -34,10 +34,67 @@ const verifyBusinessOwner = async (req, res, next) => {
   }
 };
 
+// PUBLIC: Get all active services across all businesses (for clients)
+// This endpoint is public and does not require authentication
+router.get('/public', async (req, res) => {
+  try {
+    const { category, businessId, limit = 50, page = 1 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build query
+    const query = { isActive: true };
+    if (category) query.category = category;
+    if (businessId) query.business = businessId;
+
+    const services = await Service.find(query)
+      .populate('business', 'businessName businessPhone location')
+      .select('name description category duration price image averageRating reviewCount business createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Service.countDocuments(query);
+
+    res.json({
+      services,
+      pagination: {
+        total,
+        page: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (err) {
+    console.error('Get public services error:', err);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
+// Get services for a specific business (public)
+router.get('/business/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { limit = 50 } = req.query;
+
+    const services = await Service.find({ 
+      business: businessId, 
+      isActive: true 
+    })
+      .select('name description category duration price image averageRating reviewCount')
+      .limit(parseInt(limit));
+
+    res.json(services);
+  } catch (err) {
+    console.error('Get business services error:', err);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
 // Get all services for the logged-in business owner
 router.get('/', authenticate, verifyBusinessOwner, async (req, res) => {
   try {
-    const services = await Service.find({ business: req.businessId }).lean();
+    const services = await Service.find({ business: req.businessId })
+      .select('name description category duration price image isActive averageRating reviewCount')
+      .lean();
     res.json(services);
   } catch (err) {
     console.error('Get services error:', err);
@@ -66,7 +123,18 @@ router.post('/', authenticate, verifyBusinessOwner, async (req, res) => {
     });
 
     await service.save();
-    res.status(201).json(service);
+    res.status(201).json({
+      _id: service._id,
+      name: service.name,
+      description: service.description,
+      category: service.category,
+      duration: service.duration,
+      price: service.price,
+      image: service.image,
+      isActive: service.isActive,
+      averageRating: service.averageRating,
+      reviewCount: service.reviewCount
+    });
   } catch (err) {
     console.error('Create service error:', err);
     res.status(500).json({ error: 'Failed to create service' });
@@ -93,7 +161,18 @@ router.put('/:id', authenticate, verifyBusinessOwner, async (req, res) => {
     if (isActive !== undefined) service.isActive = isActive;
 
     await service.save();
-    res.json(service);
+    res.json({
+      _id: service._id,
+      name: service.name,
+      description: service.description,
+      category: service.category,
+      duration: service.duration,
+      price: service.price,
+      image: service.image,
+      isActive: service.isActive,
+      averageRating: service.averageRating,
+      reviewCount: service.reviewCount
+    });
   } catch (err) {
     console.error('Update service error:', err);
     res.status(500).json({ error: 'Failed to update service' });

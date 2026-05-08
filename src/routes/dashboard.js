@@ -29,7 +29,7 @@ const authenticate = (req, res, next) => {
 // Create a new appointment (booking)
 router.post('/appointments', authenticate, async (req, res) => {
   try {
-    const { service, specialist, date, time, price, notes, clientName, clientEmail, clientPhone, businessId } = req.body;
+    const { service, serviceId, specialist, date, time, price, notes, clientName, clientEmail, clientPhone, businessId } = req.body;
     
     if (!businessId) {
       return res.status(400).json({ error: 'Business ID is required' });
@@ -74,6 +74,7 @@ router.post('/appointments', authenticate, async (req, res) => {
         user: req.user.id,
         business: businessId,
         service,
+        serviceId: serviceId || undefined,
         specialist,
         date: new Date(date),
         time,

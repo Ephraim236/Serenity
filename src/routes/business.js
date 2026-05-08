@@ -18,7 +18,9 @@ const DEMO_BUSINESSES = [
       state: 'Greater Accra',
       country: 'Ghana'
     },
-    image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzYWxvbiUyMHNhbG9uJTIwaW50ZXJpb3J8ZW58MXx8fHwxNzAxMjM0NTY3fDA&ixlib=rb-4.1.0&q=80&w=1080'
+    image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzYWxvbiUyMHNhbG9uJTIwaW50ZXJpb3J8ZW58MXx8fHwxNzAxMjM0NTY3fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    averageRating: 4.8,
+    reviewCount: 124
   },
   {
     _id: 'demo-business-2',
@@ -33,7 +35,9 @@ const DEMO_BUSINESSES = [
       state: 'Greater Accra',
       country: 'Ghana'
     },
-    image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxiYXJiZXIlMjBzaG9wfGVudDF8fHx8MTcwMTIzNDU2N3ww&ixlib=rb-4.1.0&q=80&w=1080'
+    image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxiYXJiZXIlMjBzaG9wfGVudDF8fHx8MTcwMTIzNDU2N3ww&ixlib=rb-4.1.0&q=80&w=1080',
+    averageRating: 4.6,
+    reviewCount: 89
   },
   {
     _id: 'demo-business-3',
@@ -48,20 +52,22 @@ const DEMO_BUSINESSES = [
       state: 'Greater Accra',
       country: 'Ghana'
     },
-    image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzcGElMjBtYXNzYWdlfGVudDF8fHx8MTc3NDQwNzgwMHww&ixlib=rb-4.1.0&q=80&w=1080'
+    image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzcGElMjBtYXNzYWdlfGVufDF8fHx8MTc3NDQwNzgwMHww&ixlib=rb-4.1.0&q=80&w=1080',
+    averageRating: 4.9,
+    reviewCount: 215
   }
 ];
 
 // Demo services
 const DEMO_SERVICES = [
-  { _id: 's1', name: 'Luxury Facial', category: 'spa', duration: 60, price: 850, description: 'Deep cleansing and rejuvenation', isActive: true },
-  { _id: 's2', name: 'Deep Tissue Massage', category: 'massage', duration: 90, price: 1200, description: 'Targeted pressure to release tension', isActive: true },
-  { _id: 's3', name: 'Hot Stone Therapy', category: 'spa', duration: 90, price: 1400, description: 'Heated stones for deep relaxation', isActive: true },
-  { _id: 's4', name: 'Classic Haircut', category: 'hair', duration: 30, price: 150, description: 'Professional haircut styling', isActive: true },
-  { _id: 's5', name: 'Beard Trim', category: 'hair', duration: 30, price: 120, description: 'Beard grooming and shaping', isActive: true },
-  { _id: 's6', name: 'Hair Styling', category: 'hair', duration: 60, price: 350, description: 'Professional hair styling', isActive: true },
-  { _id: 's7', name: 'Manicure & Pedicure', category: 'nails', duration: 75, price: 300, description: 'Full nail care package', isActive: true },
-  { _id: 's8', name: 'Bridal Makeup', category: 'spa', duration: 90, price: 1500, description: 'Professional bridal makeup', isActive: true }
+  { _id: 's1', name: 'Luxury Facial', category: 'spa', duration: 60, price: 850, description: 'Deep cleansing and rejuvenation', isActive: true, averageRating: 4.8, reviewCount: 124 },
+  { _id: 's2', name: 'Deep Tissue Massage', category: 'massage', duration: 90, price: 1200, description: 'Targeted pressure to release tension', isActive: true, averageRating: 4.9, reviewCount: 98 },
+  { _id: 's3', name: 'Hot Stone Therapy', category: 'spa', duration: 90, price: 1400, description: 'Heated stones for deep relaxation', isActive: true, averageRating: 4.7, reviewCount: 86 },
+  { _id: 's4', name: 'Classic Haircut', category: 'hair', duration: 30, price: 150, description: 'Professional haircut styling', isActive: true, averageRating: 4.6, reviewCount: 312 },
+  { _id: 's5', name: 'Beard Trim', category: 'hair', duration: 30, price: 120, description: 'Beard grooming and shaping', isActive: true, averageRating: 4.5, reviewCount: 245 },
+  { _id: 's6', name: 'Hair Styling', category: 'hair', duration: 60, price: 350, description: 'Professional hair styling', isActive: true, averageRating: 4.9, reviewCount: 178 },
+  { _id: 's7', name: 'Manicure & Pedicure', category: 'nails', duration: 75, price: 300, description: 'Full nail care package', isActive: true, averageRating: 4.4, reviewCount: 92 },
+  { _id: 's8', name: 'Bridal Makeup', category: 'spa', duration: 90, price: 1500, description: 'Professional bridal makeup', isActive: true, averageRating: 5.0, reviewCount: 56 }
 ];
 
 // Get all active businesses
@@ -69,7 +75,7 @@ router.get('/', async (req, res) => {
   try {
     console.log('Fetching businesses...');
     const businesses = await User.find({ role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages')
+      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages averageRating reviewCount')
       .lean();
 
     console.log(`Found ${businesses.length} businesses`);
@@ -93,7 +99,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const business = await User.findOne({ _id: req.params.id, role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages')
+      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages averageRating reviewCount')
       .lean();
     
     if (!business) {
