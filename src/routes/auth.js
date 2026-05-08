@@ -7,8 +7,8 @@ const User = require('../models/User');
 const Service = require('../models/Service');
 const Review = require('../models/Review');
 const Appointment = require('../models/Appointment');
-const { generateToken } = require('./passport');
-const { sendEmail } = require('../services/emailService');
+const { generateToken } = require('../config/passport');
+const { sendEmail, sendPasswordResetEmail } = require('../services/emailService');
 
 // Check if database is connected
 const isDBConnected = () => mongoose.connection.readyState === 1;
