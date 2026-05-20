@@ -60,14 +60,14 @@ const DEMO_BUSINESSES = [
 
 // Demo services
 const DEMO_SERVICES = [
-  { _id: 's1', name: 'Luxury Facial', category: 'spa', duration: 60, price: 850, description: 'Deep cleansing and rejuvenation', isActive: true, averageRating: 4.8, reviewCount: 124 },
-  { _id: 's2', name: 'Deep Tissue Massage', category: 'massage', duration: 90, price: 1200, description: 'Targeted pressure to release tension', isActive: true, averageRating: 4.9, reviewCount: 98 },
-  { _id: 's3', name: 'Hot Stone Therapy', category: 'spa', duration: 90, price: 1400, description: 'Heated stones for deep relaxation', isActive: true, averageRating: 4.7, reviewCount: 86 },
-  { _id: 's4', name: 'Classic Haircut', category: 'hair', duration: 30, price: 150, description: 'Professional haircut styling', isActive: true, averageRating: 4.6, reviewCount: 312 },
-  { _id: 's5', name: 'Beard Trim', category: 'hair', duration: 30, price: 120, description: 'Beard grooming and shaping', isActive: true, averageRating: 4.5, reviewCount: 245 },
-  { _id: 's6', name: 'Hair Styling', category: 'hair', duration: 60, price: 350, description: 'Professional hair styling', isActive: true, averageRating: 4.9, reviewCount: 178 },
-  { _id: 's7', name: 'Manicure & Pedicure', category: 'nails', duration: 75, price: 300, description: 'Full nail care package', isActive: true, averageRating: 4.4, reviewCount: 92 },
-  { _id: 's8', name: 'Bridal Makeup', category: 'spa', duration: 90, price: 1500, description: 'Professional bridal makeup', isActive: true, averageRating: 5.0, reviewCount: 56 }
+  { _id: 's1', name: 'Luxury Facial', category: 'spa', duration: 60, price: 850, description: 'Deep cleansing and rejuvenation', isActive: true, averageRating: 4.8, reviewCount: 124, business: 'demo-business-1', businessName: "Sarah's Luxury Salon" },
+  { _id: 's2', name: 'Deep Tissue Massage', category: 'massage', duration: 90, price: 1200, description: 'Targeted pressure to release tension', isActive: true, averageRating: 4.9, reviewCount: 98, business: 'demo-business-1', businessName: "Sarah's Luxury Salon" },
+  { _id: 's3', name: 'Hot Stone Therapy', category: 'spa', duration: 90, price: 1400, description: 'Heated stones for deep relaxation', isActive: true, averageRating: 4.7, reviewCount: 86, business: 'demo-business-1', businessName: "Sarah's Luxury Salon" },
+  { _id: 's4', name: 'Classic Haircut', category: 'hair', duration: 30, price: 150, description: 'Professional haircut styling', isActive: true, averageRating: 4.6, reviewCount: 312, business: 'demo-business-2', businessName: 'Elite Grooming Barbershop' },
+  { _id: 's5', name: 'Beard Trim', category: 'hair', duration: 30, price: 120, description: 'Beard grooming and shaping', isActive: true, averageRating: 4.5, reviewCount: 245, business: 'demo-business-2', businessName: 'Elite Grooming Barbershop' },
+  { _id: 's6', name: 'Hair Styling', category: 'hair', duration: 60, price: 350, description: 'Professional hair styling', isActive: true, averageRating: 4.9, reviewCount: 178, business: 'demo-business-2', businessName: 'Elite Grooming Barbershop' },
+  { _id: 's7', name: 'Manicure & Pedicure', category: 'nails', duration: 75, price: 300, description: 'Full nail care package', isActive: true, averageRating: 4.4, reviewCount: 92, business: 'demo-business-3', businessName: 'Zen Spa & Wellness' },
+  { _id: 's8', name: 'Bridal Makeup', category: 'spa', duration: 90, price: 1500, description: 'Professional bridal makeup', isActive: true, averageRating: 5.0, reviewCount: 56, business: 'demo-business-3', businessName: 'Zen Spa & Wellness' }
 ];
 
 // Get all active businesses
@@ -120,7 +120,9 @@ router.get('/:id', async (req, res) => {
       : null;
     
     // Get active services for this business
-    const services = await Service.find({ business: req.params.id, isActive: true }).lean();
+    const services = await Service.find({ business: req.params.id, isActive: true })
+      .select('name description category duration price image averageRating reviewCount businessName')
+      .lean();
     
     res.json({
       ...business,

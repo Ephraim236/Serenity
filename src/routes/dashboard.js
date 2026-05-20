@@ -441,7 +441,9 @@ router.get('/services', authenticate, async (req, res) => {
       return res.json([]);
     }
 
-    const services = await Service.find({ isActive: true }).lean();
+    const services = await Service.find({ isActive: true })
+      .select('name description category duration price image averageRating reviewCount businessName')
+      .lean();
     res.json(services);
   } catch (err) {
     // Return empty array if database error

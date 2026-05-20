@@ -44,8 +44,15 @@ try {
 }
 
 // Middleware
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://booqlly.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5000'
+].filter(Boolean);
+
 app.use(cors({
-  origin: ['https://serenity-frontend-phi.vercel.app', 'https://booqlly.vercel.app', 'http://localhost:5173', 'http://localhost:5000'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

@@ -48,7 +48,7 @@ router.get('/public', async (req, res) => {
 
     const services = await Service.find(query)
       .populate('business', 'businessName businessPhone location')
-      .select('name description category duration price image averageRating reviewCount business createdAt')
+      .select('name description category duration price image averageRating reviewCount business businessName createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -79,7 +79,7 @@ router.get('/business/:businessId', async (req, res) => {
       business: businessId, 
       isActive: true 
     })
-      .select('name description category duration price image averageRating reviewCount')
+      .select('name description category duration price image averageRating reviewCount businessName')
       .limit(parseInt(limit));
 
     res.json(services);
@@ -93,7 +93,7 @@ router.get('/business/:businessId', async (req, res) => {
 router.get('/', authenticate, verifyBusinessOwner, async (req, res) => {
   try {
     const services = await Service.find({ business: req.businessId })
-      .select('name description category duration price image isActive averageRating reviewCount')
+      .select('name description category duration price image isActive averageRating reviewCount businessName')
       .lean();
     res.json(services);
   } catch (err) {
@@ -131,6 +131,8 @@ router.post('/', authenticate, verifyBusinessOwner, async (req, res) => {
       duration: service.duration,
       price: service.price,
       image: service.image,
+      business: service.business,
+      businessName: service.businessName,
       isActive: service.isActive,
       averageRating: service.averageRating,
       reviewCount: service.reviewCount
@@ -169,6 +171,8 @@ router.put('/:id', authenticate, verifyBusinessOwner, async (req, res) => {
       duration: service.duration,
       price: service.price,
       image: service.image,
+      business: service.business,
+      businessName: service.businessName,
       isActive: service.isActive,
       averageRating: service.averageRating,
       reviewCount: service.reviewCount

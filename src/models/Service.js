@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const User = require('./User');
 
 const serviceSchema = new mongoose.Schema({
   name: {
@@ -34,6 +35,10 @@ const serviceSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  businessName: {
+    type: String,
+    trim: true
+  },
   // Service rating fields
   averageRating: {
     type: Number,
@@ -47,6 +52,26 @@ const serviceSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true
+});
+
+// Pre-save hook to populate businessName from referenced business
+serviceSchema.pre('save', async function(next) {
+  if (!this.business) return next();
+  
+  // Only fetch if businessName is not set or business reference changed
+  if (this.isNew || this.isModified('business')) {
+    try {
+      const business = await User.findById(this.business).select('businessName');
+      if (business && business.businessName) {
+        this.businessName = business.businessName;
+      } else {
+        this.businessName = undefined;
+      }
+    } catch (err) {
+      console.error('Error populating businessName:', err.message);
+    }
+  }
+  next();
 });
 
 module.exports = mongoose.model('Service', serviceSchema);
