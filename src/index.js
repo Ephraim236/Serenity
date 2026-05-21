@@ -47,6 +47,7 @@ try {
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   'https://booqlly.vercel.app',
+  'https://serenity-frontend-phi.vercel.app',
   'http://localhost:5173',
   'http://localhost:5000'
 ].filter(Boolean);
