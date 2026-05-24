@@ -3,6 +3,8 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const cloudinary = require('../config/cloudinary');
+const { Readable } = require('stream');
 
 // Configure multer for image uploads (use memory storage for serverless)
 const storage = multer.memoryStorage();
@@ -44,23 +46,65 @@ const authenticate = (req, res, next) => {
   }
 };
 
+// Helper function to upload to Cloudinary
+const uploadToCloudinary = (buffer, filename, folder = 'booking') => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: folder,
+        public_id: `${Date.now()}_${filename}`,
+        resource_type: 'auto'
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    );
+
+    // Convert buffer to stream and upload
+    const readable = Readable.from(buffer);
+    readable.pipe(stream);
+  });
+};
+
 // Upload single image
-router.post('/image', authenticate, upload.single('image'), (req, res) => {
+router.post('/image', authenticate, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    // Return base64 data URL for serverless compatibility
-    const base64Data = req.file.buffer.toString('base64');
-    const imageUrl = `data:${req.file.mimetype};base64,${base64Data}`;
+    // Check if Cloudinary is configured
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      console.warn('Cloudinary not configured, falling back to base64');
+      const base64Data = req.file.buffer.toString('base64');
+      const imageUrl = `data:${req.file.mimetype};base64,${base64Data}`;
+      return res.json({
+        success: true,
+        url: imageUrl,
+        filename: req.file.originalname,
+        size: req.file.size,
+        provider: 'base64'
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(
+      req.file.buffer,
+      req.file.originalname,
+      'booking/images'
+    );
 
     res.json({
       success: true,
-      url: imageUrl,
+      url: result.secure_url,
+      publicId: result.public_id,
       filename: req.file.originalname,
-      originalName: req.file.originalname,
-      size: req.file.size
+      size: req.file.size,
+      provider: 'cloudinary'
     });
   } catch (err) {
     console.error('Upload error:', err);
@@ -69,23 +113,46 @@ router.post('/image', authenticate, upload.single('image'), (req, res) => {
 });
 
 // Upload multiple images
-router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
+router.post('/images', authenticate, upload.array('images', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
     }
 
-    const images = req.files.map(file => {
-      const base64Data = file.buffer.toString('base64');
-      const imageUrl = `data:${file.mimetype};base64,${base64Data}`;
+    // Check if Cloudinary is configured
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      console.warn('Cloudinary not configured, falling back to base64');
+      const images = req.files.map(file => {
+        const base64Data = file.buffer.toString('base64');
+        const imageUrl = `data:${file.mimetype};base64,${base64Data}`;
+        return {
+          url: imageUrl,
+          filename: file.originalname,
+          size: file.size,
+          provider: 'base64'
+        };
+      });
 
-      return {
-        url: imageUrl,
-        filename: file.originalname,
-        originalName: file.originalname,
-        size: file.size
-      };
-    });
+      return res.json({
+        success: true,
+        images: images
+      });
+    }
+
+    // Upload all images to Cloudinary in parallel
+    const uploadPromises = req.files.map(file =>
+      uploadToCloudinary(file.buffer, file.originalname, 'booking/images')
+    );
+
+    const results = await Promise.all(uploadPromises);
+
+    const images = results.map((result, index) => ({
+      url: result.secure_url,
+      publicId: result.public_id,
+      filename: req.files[index].originalname,
+      size: req.files[index].size,
+      provider: 'cloudinary'
+    }));
 
     res.json({
       success: true,
@@ -94,6 +161,32 @@ router.post('/images', authenticate, upload.array('images', 10), (req, res) => {
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: err.message || 'Failed to upload images' });
+  }
+});
+
+// Delete image from Cloudinary
+router.delete('/image/:publicId', authenticate, async (req, res) => {
+  try {
+    const { publicId } = req.params;
+
+    if (!publicId) {
+      return res.status(400).json({ error: 'Public ID is required' });
+    }
+
+    // Check if Cloudinary is configured
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      return res.json({ success: true, message: 'Base64 images cannot be deleted' });
+    }
+
+    await cloudinary.uploader.destroy(publicId);
+
+    res.json({
+      success: true,
+      message: 'Image deleted successfully'
+    });
+  } catch (err) {
+    console.error('Delete error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete image' });
   }
 });
 
