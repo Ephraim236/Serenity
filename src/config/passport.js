@@ -3,6 +3,10 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in environment variables');
+}
+
 // Serialize user
 passport.serializeUser((user, done) => {
   done(null, user.id);
@@ -30,20 +34,14 @@ if (googleClientId && googleClientSecret) {
     callbackURL: googleCallbackUrl || '/api/auth/google/callback'
   }, async (accessToken, refreshToken, profile, done) => {
     try {
-      // Check if user already exists
       let user = await User.findOne({ googleId: profile.id });
-
       if (!user) {
-        // Check if user exists with same email
         user = await User.findOne({ email: profile.emails[0].value });
-
         if (user) {
-          // Link Google account to existing user
           user.googleId = profile.id;
           user.avatar = profile.photos[0]?.value;
           await user.save();
         } else {
-          // Create new user
           user = await User.create({
             googleId: profile.id,
             email: profile.emails[0].value,
@@ -54,7 +52,6 @@ if (googleClientId && googleClientSecret) {
           });
         }
       }
-
       return done(null, user);
     } catch (err) {
       return done(err, null);
@@ -62,11 +59,10 @@ if (googleClientId && googleClientSecret) {
   }));
 }
 
-// Generate JWT token
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id, email: user.email, role: user.role },
-    process.env.JWT_SECRET || 'your-secret-key',
+    process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
 };

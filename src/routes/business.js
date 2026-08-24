@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
-const Service = require('../models/Service');
+const { supabaseAdmin } = require('../config/supabase');
 
-// Demo businesses for when MongoDB is not connected
+// Demo businesses for when Supabase is not connected
 const DEMO_BUSINESSES = [
   {
     _id: 'demo-business-1',
@@ -73,18 +72,21 @@ const DEMO_SERVICES = [
 // Get all active businesses
 router.get('/', async (req, res) => {
   try {
-    console.log('Fetching businesses...');
-    const businesses = await User.find({ role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages averageRating reviewCount')
-      .lean();
+    const { data: businesses, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, name, email, business_name, business_email, business_phone, location, service_hours, operating_days, business_images, average_rating, review_count')
+      .eq('role', 'business')
+      .eq('is_active', true);
 
-    console.log(`Found ${businesses.length} businesses`);
+    if (error) {
+      console.error('Supabase error:', error);
+      return res.json(DEMO_BUSINESSES);
+    }
 
-    // Add image field from businessImages array
-    const businessesWithImages = businesses.map(business => ({
+    const businessesWithImages = (businesses || []).map(business => ({
       ...business,
-      image: business.businessImages && business.businessImages.length > 0
-        ? business.businessImages[0]
+      image: business.business_images && business.business_images.length > 0
+        ? business.business_images[0]
         : null
     }));
 
@@ -98,13 +100,18 @@ router.get('/', async (req, res) => {
 // Get business details with services
 router.get('/:id', async (req, res) => {
   try {
-    const business = await User.findOne({ _id: req.params.id, role: 'business' })
-      .select('name email businessName businessEmail businessPhone location serviceHours operatingDays businessImages averageRating reviewCount')
-      .lean();
-    
+    const { id } = req.params;
+
+    const { data: business, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, name, email, business_name, business_email, business_phone, location, service_hours, operating_days, business_images, average_rating, review_count')
+      .eq('id', id)
+      .eq('role', 'business')
+      .eq('is_active', true)
+      .single();
+
     if (!business) {
-      // Check if it's a demo business
-      const demoBusiness = DEMO_BUSINESSES.find(b => b._id === req.params.id);
+      const demoBusiness = DEMO_BUSINESSES.find(b => b._id === id);
       if (demoBusiness) {
         return res.json({
           ...demoBusiness,
@@ -114,22 +121,22 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Business not found' });
     }
 
-    // Add image field from businessImages array
-    business.image = business.businessImages && business.businessImages.length > 0 
-      ? business.businessImages[0] 
-      : null;
-    
     // Get active services for this business
-    const services = await Service.find({ business: req.params.id, isActive: true })
-      .select('name description category duration price image averageRating reviewCount businessName')
-      .lean();
-    
-    res.json({
+    const { data: services } = await supabaseAdmin
+      .from('services')
+      .select('id, name, description, category, duration, price, image, average_rating, review_count, business_name')
+      .eq('business_id', id)
+      .eq('is_active', true);
+
+    const response = {
       ...business,
-      services
-    });
+      image: business.business_images && business.business_images.length > 0 ? business.business_images[0] : null,
+      services: services || []
+    };
+
+    res.json(response);
   } catch (err) {
-    console.log('Using demo business details (MongoDB not connected)');
+    console.log('Using demo business details:', err.message);
     const demoBusiness = DEMO_BUSINESSES.find(b => b._id === req.params.id);
     if (demoBusiness) {
       res.json({

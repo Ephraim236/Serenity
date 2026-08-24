@@ -1,66 +1,37 @@
 const express = require('express');
 const router = express.Router();
-const Service = require('../models/Service');
-const User = require('../models/User');
-
-// Middleware to verify JWT (for business owner routes)
-const authenticate = (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-};
-
-// Verify business owner
-const verifyBusinessOwner = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user || user.role !== 'business') {
-      return res.status(403).json({ error: 'Only business owners can manage services' });
-    }
-    req.businessId = user._id;
-    next();
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to verify user' });
-  }
-};
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const { authenticate, verifyBusinessOwner } = require('../middleware/auth');
 
 // PUBLIC: Get all active services across all businesses (for clients)
-// This endpoint is public and does not require authentication
 router.get('/public', async (req, res) => {
   try {
     const { category, businessId, limit = 50, page = 1 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Build query
-    const query = { isActive: true };
-    if (category) query.category = category;
-    if (businessId) query.business = businessId;
+    let query = supabaseAdmin
+      .from('services')
+      .select('*', { count: 'exact' })
+      .eq('is_active', true);
 
-    const services = await Service.find(query)
-      .populate('business', 'businessName businessPhone location')
-      .select('name description category duration price image averageRating reviewCount business businessName createdAt')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    if (category) query = query.eq('category', category);
+    if (businessId) query = query.eq('business_id', businessId);
 
-    const total = await Service.countDocuments(query);
+    const { data: services, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + parseInt(limit) - 1);
+
+    if (error) {
+      console.error('Get public services error:', error);
+      return res.status(500).json({ error: 'Failed to fetch services' });
+    }
 
     res.json({
-      services,
+      services: services || [],
       pagination: {
-        total,
+        total: count || 0,
         page: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit))
+        totalPages: Math.ceil((count || 0) / parseInt(limit))
       }
     });
   } catch (err) {
@@ -75,14 +46,19 @@ router.get('/business/:businessId', async (req, res) => {
     const { businessId } = req.params;
     const { limit = 50 } = req.query;
 
-    const services = await Service.find({ 
-      business: businessId, 
-      isActive: true 
-    })
-      .select('name description category duration price image averageRating reviewCount businessName')
+    const { data: services, error } = await supabaseAdmin
+      .from('services')
+      .select('id, name, description, category, duration, price, image, average_rating, review_count, business_name')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
       .limit(parseInt(limit));
 
-    res.json(services);
+    if (error) {
+      console.error('Get business services error:', error);
+      return res.status(500).json({ error: 'Failed to fetch services' });
+    }
+
+    res.json(services || []);
   } catch (err) {
     console.error('Get business services error:', err);
     res.status(500).json({ error: 'Failed to fetch services' });
@@ -92,10 +68,17 @@ router.get('/business/:businessId', async (req, res) => {
 // Get all services for the logged-in business owner
 router.get('/', authenticate, verifyBusinessOwner, async (req, res) => {
   try {
-    const services = await Service.find({ business: req.businessId })
-      .select('name description category duration price image isActive averageRating reviewCount businessName')
-      .lean();
-    res.json(services);
+    const { data: services, error } = await supabaseAdmin
+      .from('services')
+      .select('id, name, description, category, duration, price, image, is_active, average_rating, review_count, business_name')
+      .eq('business_id', req.businessId);
+
+    if (error) {
+      console.error('Get services error:', error);
+      return res.status(500).json({ error: 'Failed to fetch services' });
+    }
+
+    res.json(services || []);
   } catch (err) {
     console.error('Get services error:', err);
     res.status(500).json({ error: 'Failed to fetch services' });
@@ -111,32 +94,35 @@ router.post('/', authenticate, verifyBusinessOwner, async (req, res) => {
       return res.status(400).json({ error: 'Name, category, duration, and price are required' });
     }
 
-    const service = new Service({
-      name,
-      description,
-      category,
-      duration: parseInt(duration),
-      price: parseFloat(price),
-      image,
-      business: req.businessId,
-      isActive: true
-    });
+    // Get business name
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('business_name')
+      .eq('id', req.businessId)
+      .single();
 
-    await service.save();
-    res.status(201).json({
-      _id: service._id,
-      name: service.name,
-      description: service.description,
-      category: service.category,
-      duration: service.duration,
-      price: service.price,
-      image: service.image,
-      business: service.business,
-      businessName: service.businessName,
-      isActive: service.isActive,
-      averageRating: service.averageRating,
-      reviewCount: service.reviewCount
-    });
+    const { data: service, error } = await supabaseAdmin
+      .from('services')
+      .insert({
+        name,
+        description,
+        category,
+        duration: parseInt(duration),
+        price: parseFloat(price),
+        image: image || null,
+        business_id: req.businessId,
+        business_name: profile?.business_name || null,
+        is_active: true
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Create service error:', error);
+      return res.status(500).json({ error: 'Failed to create service' });
+    }
+
+    res.status(201).json(service);
   } catch (err) {
     console.error('Create service error:', err);
     res.status(500).json({ error: 'Failed to create service' });
@@ -146,37 +132,32 @@ router.post('/', authenticate, verifyBusinessOwner, async (req, res) => {
 // Update a service
 router.put('/:id', authenticate, verifyBusinessOwner, async (req, res) => {
   try {
+    const { id } = req.params;
     const { name, description, category, duration, price, image, isActive } = req.body;
 
-    const service = await Service.findOne({ _id: req.params.id, business: req.businessId });
-    
-    if (!service) {
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (category) updateData.category = category;
+    if (duration) updateData.duration = parseInt(duration);
+    if (price) updateData.price = parseFloat(price);
+    if (image !== undefined) updateData.image = image;
+    if (isActive !== undefined) updateData.is_active = isActive;
+
+    const { data: service, error } = await supabaseAdmin
+      .from('services')
+      .update(updateData)
+      .eq('id', id)
+      .eq('business_id', req.businessId)
+      .select()
+      .single();
+
+    if (error || !service) {
+      console.error('Update service error:', error);
       return res.status(404).json({ error: 'Service not found' });
     }
 
-    if (name) service.name = name;
-    if (description !== undefined) service.description = description;
-    if (category) service.category = category;
-    if (duration) service.duration = parseInt(duration);
-    if (price) service.price = parseFloat(price);
-    if (image !== undefined) service.image = image;
-    if (isActive !== undefined) service.isActive = isActive;
-
-    await service.save();
-    res.json({
-      _id: service._id,
-      name: service.name,
-      description: service.description,
-      category: service.category,
-      duration: service.duration,
-      price: service.price,
-      image: service.image,
-      business: service.business,
-      businessName: service.businessName,
-      isActive: service.isActive,
-      averageRating: service.averageRating,
-      reviewCount: service.reviewCount
-    });
+    res.json(service);
   } catch (err) {
     console.error('Update service error:', err);
     res.status(500).json({ error: 'Failed to update service' });
@@ -186,15 +167,20 @@ router.put('/:id', authenticate, verifyBusinessOwner, async (req, res) => {
 // Delete (deactivate) a service
 router.delete('/:id', authenticate, verifyBusinessOwner, async (req, res) => {
   try {
-    const service = await Service.findOne({ _id: req.params.id, business: req.businessId });
-    
-    if (!service) {
+    const { id } = req.params;
+
+    const { data: service, error } = await supabaseAdmin
+      .from('services')
+      .update({ is_active: false })
+      .eq('id', id)
+      .eq('business_id', req.businessId)
+      .select()
+      .single();
+
+    if (error || !service) {
+      console.error('Delete service error:', error);
       return res.status(404).json({ error: 'Service not found' });
     }
-
-    // Instead of deleting, we deactivate the service
-    service.isActive = false;
-    await service.save();
 
     res.json({ message: 'Service deactivated successfully' });
   } catch (err) {

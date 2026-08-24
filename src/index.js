@@ -1,47 +1,25 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
-const passport = require('passport');
-const path = require('path');
-const fs = require('fs');
-const MongoClient = require('mongodb').MongoClient
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
-const connectDB = require('./config/db');
+const { supabase } = require('./config/supabase');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const uploadRoutes = require('./routes/upload');
 const chatbotRoutes = require('./routes/chatbot');
 const businessRoutes = require('./routes/business');
 const servicesRoutes = require('./routes/services');
-const testEmailRoutes = require('./routes/testEmail');
 const { scheduleReminders } = require('./services/emailService');
-
-// Load passport config with error handling
-try {
-  require('./config/passport');
-} catch (err) {
-  console.error('Failed to load passport config:', err.message);
-}
 
 const app = express();
 
-// Connect to MongoDB with error handling
-connectDB().catch(err => {
-  console.log('MongoDB connection error:', err.message);
-  console.error('MongoDB connection failed:', err);
-  console.log('Server will continue in demo mode');
-});
-
-// Create uploads directory for local dev (ignore errors on read-only FS)
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-} catch (err) {
-  console.log('Uploads dir unavailable (expected on Vercel read-only FS)');
-}
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
 
 // Middleware
 const allowedOrigins = [
@@ -49,7 +27,7 @@ const allowedOrigins = [
   'https://booqlly.vercel.app',
   'https://serenity-frontend-phi.vercel.app',
   'http://localhost:5173',
-  'http://localhost:5000'
+  'http://localhost:3000'
 ].filter(Boolean);
 
 app.use(cors({
@@ -61,20 +39,25 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Session
-app.use(session({
-  secret: process.env.JWT_SECRET || 'your-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000
-  }
-}));
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
 
-app.use(passport.initialize());
-app.use(passport.session());
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later.' }
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/auth/', authLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -83,14 +66,17 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/services', servicesRoutes);
-app.use('/api/test-email', testEmailRoutes);
-
-// Note: Using base64 data URLs instead of static file serving for serverless compatibility
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Remove test email route in production
+if (process.env.NODE_ENV !== 'production') {
+  const testEmailRoutes = require('./routes/testEmail');
+  app.use('/api/test-email', testEmailRoutes);
+}
 
 // 404
 app.use((req, res) => {
@@ -99,9 +85,11 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  const message = status < 500 ? err.message : 'Something went wrong';
   console.error(`[ERROR] ${req.method} ${req.path}:`, err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Something went wrong',
+  res.status(status).json({
+    error: message,
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
 });

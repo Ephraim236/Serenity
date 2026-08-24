@@ -1,78 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const passport = require('passport');
-const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const Service = require('../models/Service');
-const Review = require('../models/Review');
-const Appointment = require('../models/Appointment');
-const { generateToken } = require('../config/passport');
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const { authenticate } = require('../middleware/auth');
 const { sendEmail, sendPasswordResetEmail } = require('../services/emailService');
 
-// Check if database is connected
-const isDBConnected = () => mongoose.connection.readyState === 1;
-
-// Middleware to verify JWT for profile routes
-const authenticate = (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-};
-
-// Local Registration
+// Register new user
 router.post('/register', async (req, res) => {
   try {
-    const dbConnected = isDBConnected();
-    
-    // Check database connection - allow demo registration if not connected
-    if (!dbConnected) {
-      // Demo mode registration
-      const { 
-        email,
-        password, 
-        name, 
-        role, 
-        businessName,
-        businessEmail,
-        businessPhone
-      } = req.body;
-
-      if (!email || !password || !name) {
-        return res.status(400).json({ error: 'Email, password, and name are required' });
-      }
-
-      const token = generateToken({
-        id: 'demo-' + Date.now(),
-        email,
-        name,
-        role: role || 'client',
-        businessName: businessName || ''
-      });
-      
-      return res.status(201).json({
-        message: 'Registration successful (demo mode)',
-        token,
-        user: {
-          id: 'demo-' + Date.now(),
-          email,
-          name,
-          role: role || 'client',
-          avatar: '',
-          businessName: businessName || ''
-        }
-      });
-    }
-
     const { 
       email,
       password, 
@@ -87,46 +21,75 @@ router.post('/register', async (req, res) => {
       businessImages
     } = req.body;
 
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Email, password, and name are required' });
     }
 
-    // Create user
-    const userData = {
+    // Register user with Supabase Auth
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
+      email_confirm: true,
+      user_metadata: {
+        name,
+        role: role || 'client'
+      }
+    });
+
+    if (error) {
+      console.error('Supabase registration error:', error);
+      if (error.message.includes('already registered')) {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+      return res.status(400).json({ error: error.message || 'Registration failed' });
+    }
+
+    const userId = data.user.id;
+
+    // Create profile
+    const profileData = {
+      id: userId,
+      email,
       name,
       role: role || 'client',
-      authProvider: 'local'
+      auth_provider: 'local'
     };
 
     // Add business details if role is business
     if (role === 'business') {
-      userData.businessName = businessName;
-      userData.businessEmail = businessEmail;
-      userData.businessPhone = businessPhone;
-      userData.location = location;
-      userData.serviceHours = serviceHours;
-      userData.operatingDays = operatingDays;
-      userData.businessImages = businessImages;
+      profileData.business_name = businessName;
+      profileData.business_email = businessEmail;
+      profileData.business_phone = businessPhone;
+      profileData.location = location || {};
+      profileData.service_hours = serviceHours || {};
+      profileData.operating_days = operatingDays || [];
+      profileData.business_images = businessImages || [];
     }
 
-    const user = await User.create(userData);
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .insert(profileData);
 
-    const token = generateToken(user);
+    if (profileError) {
+      console.error('Profile creation error:', profileError);
+      // Try to clean up the auth user if profile creation fails
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return res.status(500).json({ error: 'Failed to create profile' });
+    }
+
+    // Generate a custom JWT for the frontend
+    const token = generateToken(userId, email, role || 'client');
 
     res.status(201).json({
       message: 'Registration successful',
       token,
       user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        avatar: user.avatar,
-        businessName: user.businessName
+        id: userId,
+        email,
+        name,
+        role: role || 'client',
+        avatar: '',
+        businessName: businessName || ''
       }
     });
   } catch (err) {
@@ -134,12 +97,6 @@ router.post('/register', async (req, res) => {
     res.status(500).json({ error: 'Registration failed' });
   }
 });
-
-// Demo mode credentials
-const DEMO_USERS = {
-  'demo@business.com': { password: 'demo123', name: 'Demo Business', role: 'business', businessName: 'Demo Salon' },
-  'demo@client.com': { password: 'demo123', name: 'Demo Client', role: 'client' }
-};
 
 // Local Login
 router.post('/login', async (req, res) => {
@@ -150,68 +107,44 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if database is connected
-    const dbConnected = isDBConnected();
-    
-    if (!dbConnected) {
-      // Demo mode - allow login with demo credentials
-      const demoUser = DEMO_USERS[email];
-      if (demoUser && demoUser.password === password) {
-        const token = generateToken({
-          id: 'demo-' + Date.now(),
-          email,
-          name: demoUser.name,
-          role: demoUser.role,
-          businessName: demoUser.businessName
-        });
-        
-        return res.json({
-          message: 'Login successful (demo mode)',
-          token,
-          user: {
-            id: 'demo-' + Date.now(),
-            email,
-            name: demoUser.name,
-            role: demoUser.role,
-            avatar: '',
-            businessName: demoUser.businessName || ''
-          }
-        });
-      }
-      
-      return res.status(401).json({ error: 'Invalid credentials or database not connected' });
-    }
+    // Sign in with Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
 
-    // Database connected - normal login
-    const user = await User.findOne({ email }).select('+password');
-    if (!user) {
+    if (error || !data.user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    if (!user.password) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    const user = data.user;
+    const token = data.session.access_token;
+
+    // Get profile
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profile) {
+      // Update last login
+      await supabaseAdmin
+        .from('profiles')
+        .update({ last_login: new Date() })
+        .eq('id', user.id);
     }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    user.lastLogin = new Date();
-    await user.save();
-
-    const token = generateToken(user);
 
     res.json({
       message: 'Login successful',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
-        name: user.name,
-        role: user.role,
-        avatar: user.avatar,
-        businessName: user.businessName
+        name: profile?.name || user.user_metadata?.name || '',
+        role: profile?.role || 'client',
+        avatar: profile?.avatar || '',
+        businessName: profile?.business_name || ''
       }
     });
   } catch (err) {
@@ -220,60 +153,44 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Google OAuth Routes
-router.get('/google', passport.authenticate('google', { 
-  scope: ['profile', 'email']
-}));
-
-router.get('/google/callback', 
-  passport.authenticate('google', { failureRedirect: '/login?error=oauth' }),
-  (req, res) => {
-    const token = generateToken(req.user);
-    // Determine frontend URL based on environment
-    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    
-    // If running locally, use localhost:5173
-    if (process.env.NODE_ENV !== 'production') {
-      frontendUrl = 'http://localhost:5173';
-    }
-    
-    // Redirect to frontend with token
-    const redirectUrl = `${frontendUrl}/auth/callback?token=${token}`;
-    res.redirect(redirectUrl);
-  }
-);
+// Google OAuth - redirect to Supabase Auth
+router.get('/google', (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/callback`;
+  const authUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+  res.redirect(authUrl);
+});
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', req.user.id)
+      .single();
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const user = await User.findById(decoded.id);
-
-    if (!user) {
+    if (!profile) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     res.json({
-      id: user._id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      avatar: user.avatar,
-      businessName: user.businessName,
-      businessEmail: user.businessEmail,
-      businessPhone: user.businessPhone,
-      location: user.location,
-      serviceHours: user.serviceHours,
-      operatingDays: user.operatingDays,
-      businessImages: user.businessImages
+      id: profile.id,
+      email: profile.email,
+      name: profile.name,
+      role: profile.role,
+      avatar: profile.avatar || '',
+      businessName: profile.business_name || '',
+      businessEmail: profile.business_email || '',
+      businessPhone: profile.business_phone || '',
+      location: profile.location || {},
+      serviceHours: profile.service_hours || {},
+      operatingDays: profile.operating_days || [],
+      businessImages: profile.business_images || []
     });
   } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+    console.error('Get profile error:', err);
+    res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
 
@@ -286,151 +203,57 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    // Check if database is connected
-    const dbConnected = isDBConnected();
-    
-    if (!dbConnected) {
-      // Demo mode
-      const demoUser = Object.keys(DEMO_USERS).find(user => user === email);
-      if (demoUser) {
-        // In demo mode, just return success (don't actually send email)
-        return res.json({ 
-          message: 'If your email exists in our system, you will receive a password reset link' 
-        });
-      } else {
-        // Still return success to prevent email enumeration
-        return res.json({ 
-          message: 'If your email exists in our system, you will receive a password reset link' 
-        });
+    // Use Supabase Auth password reset
+    const { error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email: email,
+      options: {
+        redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`
       }
+    });
+
+    if (error) {
+      console.error('Password reset error:', error);
     }
 
-    // Database connected - normal operation
-    const user = await User.findOne({ email });
-    
     // Always return success to prevent email enumeration
-    if (!user) {
-      return res.json({ 
-        message: 'If your email exists in our system, you will receive a password reset link' 
-      });
-    }
-
-    // Generate reset token
-    const crypto = require('crypto');
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    
-    // Hash token and set to user object
-    user.resetPasswordToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-    
-    // Set token expiry (1 hour from now)
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
-    
-    await user.save();
-
-    // Send email with reset link
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
-    
-    try {
-      await sendPasswordResetEmail(user.email, resetUrl);
-      res.json({ 
-        message: 'If your email exists in our system, you will receive a password reset link' 
-      });
-    } catch (emailError) {
-      console.error('Email sending error:', emailError);
-      res.status(500).json({ error: 'Failed to send reset email' });
-    }
+    res.json({ 
+      message: 'If your email exists in our system, you will receive a password reset link' 
+    });
   } catch (err) {
     console.error('Forgot password error:', err);
     res.status(500).json({ error: 'Password reset failed' });
   }
 });
 
-// Reset password route
-router.post('/reset-password/:token', async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { password } = req.body;
-
-    if (!token || !password) {
-      return res.status(400).json({ error: 'Token and password are required' });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
-    }
-
-    // Check if database is connected
-    const dbConnected = isDBConnected();
-    
-    if (!dbConnected) {
-      // Demo mode - just return success
-      return res.json({ message: 'Password reset successful (demo mode)' });
-    }
-
-    // Hash token to compare with database
-    const crypto = require('crypto');
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
-
-    // Find user by token and check expiry
-    const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-
-    // Update password
-    user.password = password;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    
-    await user.save();
-
-    res.json({ message: 'Password has been reset successfully' });
-  } catch (err) {
-    console.error('Reset password error:', err);
-    res.status(500).json({ error: 'Password reset failed' });
-  }
-});
-
 // Check if Google OAuth is configured
 router.get('/google/status', (req, res) => {
-  const isConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const isConfigured = !!process.env.GOOGLE_CLIENT_ID;
   res.json({ googleAuthAvailable: isConfigured });
 });
 
 // Get business profile
 router.get('/profile', authenticate, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', req.user.id)
+      .single();
+
+    if (!profile) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json({
-      businessName: user.businessName || '',
-      businessEmail: user.businessEmail || '',
-      businessPhone: user.businessPhone || '',
-      businessImage: user.businessImage || '',
-      businessImages: user.businessImages || [],
-      location: user.location || {
-        address: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        country: ''
-      },
-      serviceHours: user.serviceHours || {},
-      operatingDays: user.operatingDays || []
+      businessName: profile.business_name || '',
+      businessEmail: profile.business_email || '',
+      businessPhone: profile.business_phone || '',
+      businessImage: profile.business_images?.[0] || '',
+      businessImages: profile.business_images || [],
+      location: profile.location || {},
+      serviceHours: profile.service_hours || {},
+      operatingDays: profile.operating_days || []
     });
   } catch (err) {
     console.error('Get profile error:', err);
@@ -441,26 +264,25 @@ router.get('/profile', authenticate, async (req, res) => {
 // Get business locations for map (public endpoint)
 router.get('/business-locations', async (req, res) => {
   try {
-    // Find all business users with location data
-    const businesses = await User.find({
-      role: 'business',
-      isActive: true,
-      'location.latitude': { $exists: true, $ne: null },
-      'location.longitude': { $exists: true, $ne: null }
-    }).select('businessName location.latitude location.longitude businessPhone businessEmail averageRating reviewCount');
-    
-    // Format response for map display
-    const locations = businesses.map(business => ({
-      id: business._id,
-      name: business.businessName,
-      latitude: business.location.latitude,
-      longitude: business.location.longitude,
-      phone: business.businessPhone,
-      email: business.businessEmail,
-      averageRating: business.averageRating,
-      reviewCount: business.reviewCount
+    const { data: businesses } = await supabaseAdmin
+      .from('profiles')
+      .select('id, business_name, location, business_phone, business_email, average_rating, review_count')
+      .eq('role', 'business')
+      .eq('is_active', true)
+      .not('location->>latitude', 'is', null)
+      .not('location->>longitude', 'is', null);
+
+    const locations = (businesses || []).map(business => ({
+      id: business.id,
+      name: business.business_name,
+      latitude: business.location?.latitude,
+      longitude: business.location?.longitude,
+      phone: business.business_phone,
+      email: business.business_email,
+      averageRating: business.average_rating,
+      reviewCount: business.review_count
     }));
-    
+
     res.json({ businesses: locations });
   } catch (err) {
     console.error('Get business locations error:', err);
@@ -472,31 +294,35 @@ router.get('/business-locations', async (req, res) => {
 router.get('/business-location/:businessId', async (req, res) => {
   try {
     const { businessId } = req.params;
-    
-    const business = await User.findOne({
-      _id: businessId,
-      role: 'business',
-      isActive: true
-    }).select('businessName location.latitude location.longitude businessPhone businessEmail address averageRating reviewCount');
-    
+
+    const { data: business } = await supabaseAdmin
+      .from('profiles')
+      .select('business_name, location, business_phone, business_email, average_rating, review_count')
+      .eq('id', businessId)
+      .eq('role', 'business')
+      .eq('is_active', true)
+      .single();
+
     if (!business) {
       return res.status(404).json({ error: 'Business not found' });
     }
-    
-    if (!business.location.latitude || !business.location.longitude) {
+
+    if (!business.location?.latitude || !business.location?.longitude) {
       return res.status(400).json({ error: 'Business location not set' });
     }
-    
+
+    const address = `${business.location.address || ''}, ${business.location.city || ''}, ${business.location.state || ''} ${business.location.zipCode || ''}, ${business.location.country || ''}`.trim();
+
     res.json({
-      id: business._id,
-      name: business.businessName,
+      id: businessId,
+      name: business.business_name,
       latitude: business.location.latitude,
       longitude: business.location.longitude,
-      phone: business.businessPhone,
-      email: business.businessEmail,
-      address: `${business.location.address || ''}, ${business.location.city || ''}, ${business.location.state || ''} ${business.location.zipCode || ''}, ${business.location.country || ''}`.trim(),
-      averageRating: business.averageRating,
-      reviewCount: business.reviewCount
+      phone: business.business_phone,
+      email: business.business_email,
+      address,
+      averageRating: business.average_rating,
+      reviewCount: business.review_count
     });
   } catch (err) {
     console.error('Get business location error:', err);
@@ -507,14 +333,6 @@ router.get('/business-location/:businessId', async (req, res) => {
 // Update business profile
 router.put('/profile', authenticate, async (req, res) => {
   try {
-    console.log('Profile update request - user:', req.user);
-    
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
     const { 
       businessName, 
       businessEmail, 
@@ -524,62 +342,50 @@ router.put('/profile', authenticate, async (req, res) => {
       operatingDays,
       businessImages
     } = req.body;
-    
-    console.log('Updating profile with data:', { businessName, businessEmail, businessPhone });
-    
-    // Update business profile fields (only update if provided)
-    if (businessName !== undefined) user.businessName = businessName;
-    if (businessEmail !== undefined) user.businessEmail = businessEmail;
-    if (businessPhone !== undefined) user.businessPhone = businessPhone;
-    
-     // Handle location - merge with existing or set new
-     if (location !== undefined) {
-       user.location = {
-         address: location.address || '',
-         city: location.city || '',
-         state: location.state || '',
-         zipCode: location.zipCode || '',
-         country: location.country || '',
-         // Update GPS coordinates if provided
-         latitude: location.latitude !== undefined ? location.latitude : user.location?.latitude,
-         longitude: location.longitude !== undefined ? location.longitude : user.location?.longitude
-       };
-     }
-    
-    // Handle serviceHours - ensure proper format
-    if (serviceHours !== undefined) {
-      user.serviceHours = serviceHours;
+
+    const updateData = {};
+    if (businessName !== undefined) updateData.business_name = businessName;
+    if (businessEmail !== undefined) updateData.business_email = businessEmail;
+    if (businessPhone !== undefined) updateData.business_phone = businessPhone;
+    if (location !== undefined) updateData.location = location;
+    if (serviceHours !== undefined) updateData.service_hours = serviceHours;
+    if (operatingDays !== undefined) updateData.operating_days = operatingDays;
+    if (businessImages !== undefined) updateData.business_images = businessImages;
+
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .update(updateData)
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Profile update error:', error);
+      return res.status(500).json({ error: 'Failed to update profile' });
     }
-    
-    if (operatingDays !== undefined) user.operatingDays = operatingDays;
-    if (businessImages !== undefined) user.businessImages = businessImages;
-    
-    await user.save();
-    console.log('Profile saved successfully');
-    
+
     res.json({
       message: 'Profile updated successfully',
       user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        avatar: user.avatar,
-        businessName: user.businessName,
-        businessEmail: user.businessEmail,
-        businessPhone: user.businessPhone,
-        location: user.location,
-        serviceHours: user.serviceHours,
-        operatingDays: user.operatingDays,
-        businessImages: user.businessImages
+        id: profile.id,
+        email: profile.email,
+        name: profile.name,
+        role: profile.role,
+        avatar: profile.avatar,
+        businessName: profile.business_name,
+        businessEmail: profile.business_email,
+        businessPhone: profile.business_phone,
+        location: profile.location,
+        serviceHours: profile.service_hours,
+        operatingDays: profile.operating_days,
+        businessImages: profile.business_images
       }
     });
-   } catch (err) {
-     console.error('Update profile error:', err);
-     console.error('Error stack:', err.stack);
-     res.status(500).json({ error: 'Failed to update profile' });
-   }
- });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
 
 // ==================== REVIEWS & RATINGS ROUTES ====================
 
@@ -589,26 +395,44 @@ router.get('/businesses/:businessId/reviews', async (req, res) => {
     const { businessId } = req.params;
     const { page = 1, limit = 10, sort = 'newest' } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const range = offset + parseInt(limit) - 1;
 
-    // Build sort object
-    let sortObj = { createdAt: -1 };
-    if (sort === 'highest') sortObj = { rating: -1, createdAt: -1 };
-    if (sort === 'lowest') sortObj = { rating: 1, createdAt: -1 };
+    let orderBy = { created_at: 'desc' };
+    if (sort === 'highest') orderBy = { rating: 'desc', created_at: 'desc' };
+    if (sort === 'lowest') orderBy = { rating: 'asc', created_at: 'desc' };
 
-    const reviews = await Review.find({ business: businessId })
-      .populate('user', 'name avatar')
-      .sort(sortObj)
-      .skip(skip)
-      .limit(parseInt(limit));
+    const { data: reviews, error: reviewsError, count } = await supabaseAdmin
+      .from('reviews')
+      .select('*', { count: 'exact' })
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false })
+      .range(offset, range);
 
-    const total = await Review.countDocuments({ business: businessId });
+    if (reviewsError) {
+      console.error('Get reviews error:', reviewsError);
+      return res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+
+    // Get user names for reviews
+    const userIds = [...new Set(reviews?.map(r => r.user_id) || [])];
+    const { data: users } = await supabaseAdmin
+      .from('profiles')
+      .select('id, name, avatar')
+      .in('id', userIds);
+
+    const usersMap = new Map(users?.map(u => [u.id, u]) || []);
+
+    const formattedReviews = reviews?.map(review => ({
+      ...review,
+      user: usersMap.get(review.user_id) || { name: 'Anonymous', avatar: '' }
+    })) || [];
 
     res.json({
-      reviews,
-      total,
+      reviews: formattedReviews,
+      total: count || 0,
       page: parseInt(page),
-      totalPages: Math.ceil(total / parseInt(limit))
+      totalPages: Math.ceil((count || 0) / parseInt(limit))
     });
   } catch (err) {
     console.error('Get business reviews error:', err);
@@ -622,26 +446,42 @@ router.get('/services/:serviceId/reviews', async (req, res) => {
     const { serviceId } = req.params;
     const { page = 1, limit = 10, sort = 'newest' } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Build sort object
-    let sortObj = { createdAt: -1 };
-    if (sort === 'highest') sortObj = { rating: -1, createdAt: -1 };
-    if (sort === 'lowest') sortObj = { rating: 1, createdAt: -1 };
+    let orderBy = { created_at: 'desc' };
+    if (sort === 'highest') orderBy = { rating: 'desc', created_at: 'desc' };
+    if (sort === 'lowest') orderBy = { rating: 'asc', created_at: 'desc' };
 
-    const reviews = await Review.find({ service: serviceId })
-      .populate('user', 'name avatar')
-      .sort(sortObj)
-      .skip(skip)
-      .limit(parseInt(limit));
+    const { data: reviews, error: reviewsError, count } = await supabaseAdmin
+      .from('reviews')
+      .select('*', { count: 'exact' })
+      .eq('service_id', serviceId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + parseInt(limit) - 1);
 
-    const total = await Review.countDocuments({ service: serviceId });
+    if (reviewsError) {
+      console.error('Get service reviews error:', reviewsError);
+      return res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+
+    const userIds = [...new Set(reviews?.map(r => r.user_id) || [])];
+    const { data: users } = await supabaseAdmin
+      .from('profiles')
+      .select('id, name, avatar')
+      .in('id', userIds);
+
+    const usersMap = new Map(users?.map(u => [u.id, u]) || []);
+
+    const formattedReviews = reviews?.map(review => ({
+      ...review,
+      user: usersMap.get(review.user_id) || { name: 'Anonymous', avatar: '' }
+    })) || [];
 
     res.json({
-      reviews,
-      total,
+      reviews: formattedReviews,
+      total: count || 0,
       page: parseInt(page),
-      totalPages: Math.ceil(total / parseInt(limit))
+      totalPages: Math.ceil((count || 0) / parseInt(limit))
     });
   } catch (err) {
     console.error('Get service reviews error:', err);
@@ -653,22 +493,48 @@ router.get('/services/:serviceId/reviews', async (req, res) => {
 router.get('/my-reviews', authenticate, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const reviews = await Review.find({ user: req.user.id })
-      .populate('business', 'businessName')
-      .populate('service', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    const { data: reviews, error: reviewsError, count } = await supabaseAdmin
+      .from('reviews')
+      .select('*', { count: 'exact' })
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + parseInt(limit) - 1);
 
-    const total = await Review.countDocuments({ user: req.user.id });
+    if (reviewsError) {
+      console.error('Get my reviews error:', reviewsError);
+      return res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+
+    // Get business and service names
+    const businessIds = [...new Set(reviews?.map(r => r.business_id) || [])];
+    const serviceIds = [...new Set(reviews?.map(r => r.service_id).filter(Boolean) || [])];
+
+    const { data: businesses } = await supabaseAdmin
+      .from('profiles')
+      .select('id, business_name')
+      .in('id', businessIds);
+
+    const { data: services } = await supabaseAdmin
+      .from('services')
+      .select('id, name')
+      .in('id', serviceIds);
+
+    const businessMap = new Map(businesses?.map(b => [b.id, b.business_name]) || []);
+    const serviceMap = new Map(services?.map(s => [s.id, s.name]) || []);
+
+    const formattedReviews = reviews?.map(review => ({
+      ...review,
+      business: { businessName: businessMap.get(review.business_id) || '' },
+      service: { name: serviceMap.get(review.service_id) || '' }
+    })) || [];
 
     res.json({
-      reviews,
-      total,
+      reviews: formattedReviews,
+      total: count || 0,
       page: parseInt(page),
-      totalPages: Math.ceil(total / parseInt(limit))
+      totalPages: Math.ceil((count || 0) / parseInt(limit))
     });
   } catch (err) {
     console.error('Get my reviews error:', err);
@@ -681,7 +547,6 @@ router.post('/reviews', authenticate, async (req, res) => {
   try {
     const { businessId, serviceId, appointmentId, rating, comment, tags } = req.body;
 
-    // Validate required fields
     if (!businessId || !rating) {
       return res.status(400).json({ error: 'Business ID and rating are required' });
     }
@@ -691,92 +556,122 @@ router.post('/reviews', authenticate, async (req, res) => {
     }
 
     // Verify business exists
-    const business = await User.findById(businessId);
-    if (!business || business.role !== 'business') {
+    const { data: business } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role')
+      .eq('id', businessId)
+      .eq('role', 'business')
+      .single();
+
+    if (!business) {
       return res.status(404).json({ error: 'Business not found' });
     }
 
     // If serviceId provided, verify service exists and belongs to business
-    let service = null;
     if (serviceId) {
-      service = await Service.findById(serviceId);
-      if (!service || service.business.toString() !== businessId) {
+      const { data: service } = await supabaseAdmin
+        .from('services')
+        .select('id, business_id')
+        .eq('id', serviceId)
+        .single();
+
+      if (!service || service.business_id !== businessId) {
         return res.status(400).json({ error: 'Invalid service for this business' });
       }
     }
 
     // If appointmentId provided, verify it belongs to user and is completed
-    let appointment = null;
     if (appointmentId) {
-      appointment = await Appointment.findOne({
-        _id: appointmentId,
-        user: req.user.id,
-        business: businessId,
-        status: 'completed'
-      });
+      const { data: appointment } = await supabaseAdmin
+        .from('appointments')
+        .select('id, status')
+        .eq('id', appointmentId)
+        .eq('user_id', req.user.id)
+        .eq('business_id', businessId)
+        .eq('status', 'completed')
+        .single();
+
       if (!appointment) {
         return res.status(400).json({ error: 'Invalid or incomplete appointment' });
       }
     }
 
     // Check if user already reviewed this business/service combination
-    const existingReviewQuery = {
-      user: req.user.id,
-      business: businessId
-    };
-
+    let existingReview;
     if (serviceId) {
-      existingReviewQuery.service = serviceId;
+      const { data } = await supabaseAdmin
+        .from('reviews')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .eq('business_id', businessId)
+        .eq('service_id', serviceId)
+        .single();
+      existingReview = data;
+    } else {
+      const { data } = await supabaseAdmin
+        .from('reviews')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .eq('business_id', businessId)
+        .is('service_id', null)
+        .single();
+      existingReview = data;
     }
-
-    const existingReview = await Review.findOne(existingReviewQuery);
 
     if (existingReview) {
       // Update existing review
-      existingReview.rating = rating;
-      if (comment !== undefined) existingReview.comment = comment;
-      if (tags !== undefined) existingReview.tags = tags;
-      existingReview.isVerified = appointment ? true : existingReview.isVerified;
-      if (appointmentId) existingReview.appointment = appointmentId;
+      const updateData = { rating, comment, tags, is_verified: appointmentId ? true : existingReview.is_verified };
+      if (appointmentId) updateData.appointment_id = appointmentId;
 
-      await existingReview.save();
+      const { data: updated, error } = await supabaseAdmin
+        .from('reviews')
+        .update(updateData)
+        .eq('id', existingReview.id)
+        .select()
+        .single();
 
-      // Update aggregated ratings
-      await updateBusinessRating(businessId);
-      if (serviceId) {
-        await updateServiceRating(serviceId);
+      if (error) {
+        console.error('Update review error:', error);
+        return res.status(500).json({ error: 'Failed to update review' });
       }
 
       return res.json({
         message: 'Review updated successfully',
-        review: existingReview
+        review: updated
       });
     }
 
     // Create new review
-    const review = new Review({
-      user: req.user.id,
-      business: businessId,
-      service: serviceId || undefined,
-      appointment: appointmentId || undefined,
-      rating,
-      comment,
-      tags,
-      isVerified: appointment ? true : false
-    });
+    const { data: review, error } = await supabaseAdmin
+      .from('reviews')
+      .insert({
+        user_id: req.user.id,
+        business_id: businessId,
+        service_id: serviceId || null,
+        appointment_id: appointmentId || null,
+        rating,
+        comment,
+        tags: tags || [],
+        is_verified: !!appointmentId
+      })
+      .select()
+      .single();
 
-    await review.save();
-
-    // Update aggregated ratings
-    await updateBusinessRating(businessId);
-    if (serviceId) {
-      await updateServiceRating(serviceId);
+    if (error) {
+      console.error('Create review error:', error);
+      return res.status(500).json({ error: 'Failed to submit review' });
     }
 
-    // Optionally send email notification to business owner
-    const businessOwner = await User.findById(businessId);
+    // Get business owner email for notification
+    const { data: businessOwner } = await supabaseAdmin
+      .from('profiles')
+      .select('email, name')
+      .eq('id', businessId)
+      .single();
+
     if (businessOwner && businessOwner.email) {
       const subject = 'New Review Received - Booqlly';
+      const sanitizedComment = (comment || '').replace(/[<>]/g, '');
       const html = `
         <!DOCTYPE html>
         <html>
@@ -798,7 +693,7 @@ router.post('/reviews', authenticate, async (req, res) => {
             <div class="content">
               <p>Hello ${businessOwner.name},</p>
               <p>You've received a new ${'★'.repeat(rating)}${'☆'.repeat(5-rating)} (${rating}/5) review:</p>
-              ${comment ? `<p><em>"${comment}"</em></p>` : ''}
+              ${sanitizedComment ? '<p><em>"' + sanitizedComment + '"</em></p>' : ''}
               <p>You can view all your reviews in your admin dashboard.</p>
             </div>
             <div class="footer">
@@ -826,25 +721,31 @@ router.delete('/reviews/:reviewId', authenticate, async (req, res) => {
   try {
     const { reviewId } = req.params;
 
-    const review = await Review.findById(reviewId);
-    if (!review) {
+    const { data: review, error: fetchError } = await supabaseAdmin
+      .from('reviews')
+      .select('*')
+      .eq('id', reviewId)
+      .single();
+
+    if (fetchError || !review) {
       return res.status(404).json({ error: 'Review not found' });
     }
 
-    // Check if user is the review author
-    if (review.user.toString() !== req.user.id) {
+    if (review.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to delete this review' });
     }
 
-    const businessId = review.business;
-    const serviceId = review.service;
+    const businessId = review.business_id;
+    const serviceId = review.service_id;
 
-    await Review.findByIdAndDelete(reviewId);
+    const { error: deleteError } = await supabaseAdmin
+      .from('reviews')
+      .delete()
+      .eq('id', reviewId);
 
-    // Update aggregated ratings
-    await updateBusinessRating(businessId);
-    if (serviceId) {
-      await updateServiceRating(serviceId);
+    if (deleteError) {
+      console.error('Delete review error:', deleteError);
+      return res.status(500).json({ error: 'Failed to delete review' });
     }
 
     res.json({ message: 'Review deleted successfully' });
@@ -854,65 +755,14 @@ router.delete('/reviews/:reviewId', authenticate, async (req, res) => {
   }
 });
 
-// Helper function to update business average rating and review count
-async function updateBusinessRating(businessId) {
-  try {
-    const stats = await Review.aggregate([
-      { $match: { business: mongoose.Types.ObjectId(businessId) } },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' },
-          reviewCount: { $sum: 1 }
-        }
-      }
-    ]);
-
-    if (stats.length > 0) {
-      await User.findByIdAndUpdate(businessId, {
-        averageRating: Math.round(stats[0].averageRating * 10) / 10, // Round to 1 decimal
-        reviewCount: stats[0].reviewCount
-      });
-    } else {
-      await User.findByIdAndUpdate(businessId, {
-        averageRating: 0,
-        reviewCount: 0
-      });
-    }
-  } catch (err) {
-    console.error('Update business rating error:', err);
-  }
-}
-
-// Helper function to update service average rating and review count
-async function updateServiceRating(serviceId) {
-  try {
-    const stats = await Review.aggregate([
-      { $match: { service: mongoose.Types.ObjectId(serviceId) } },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' },
-          reviewCount: { $sum: 1 }
-        }
-      }
-    ]);
-
-    if (stats.length > 0) {
-      await Service.findByIdAndUpdate(serviceId, {
-        averageRating: Math.round(stats[0].averageRating * 10) / 10,
-        reviewCount: stats[0].reviewCount
-      });
-    } else {
-      await Service.findByIdAndUpdate(serviceId, {
-        averageRating: 0,
-        reviewCount: 0
-      });
-    }
-  } catch (err) {
-    console.error('Update service rating error:', err);
-  }
+// Helper function to generate JWT token (for frontend compatibility)
+function generateToken(userId, email, role) {
+  const jwt = require('jsonwebtoken');
+  return jwt.sign(
+    { id: userId, email, role },
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: '7d' }
+  );
 }
 
 module.exports = router;
-

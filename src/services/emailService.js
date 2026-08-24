@@ -1,7 +1,6 @@
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
-const Appointment = require('../models/Appointment');
-const User = require('../models/User');
+const { supabaseAdmin } = require('../config/supabase');
 
 // Email configuration
 const getEmailConfig = () => ({
@@ -212,9 +211,13 @@ const sendClientBookingConfirmation = async (appointment) => {
 
 // Send booking notification to business owner
 const sendBusinessOwnerNotification = async (appointment) => {
-  // Find the business owner associated with this booking using the business field
-  const businessOwner = await User.findOne({ _id: appointment.business, role: 'business' });
-  
+  const { data: businessOwner } = await supabaseAdmin
+    .from('profiles')
+    .select('name, email')
+    .eq('id', appointment.business_id)
+    .eq('role', 'business')
+    .single();
+
   if (!businessOwner) {
     console.log('No business owner found for this booking');
     return false;
@@ -428,8 +431,13 @@ const sendClientReminder = async (appointment) => {
 
 // Send reminder email to business owner
 const sendBusinessOwnerReminder = async (appointment) => {
-  const businessOwner = await User.findOne({ _id: appointment.business, role: 'business' });
-  
+  const { data: businessOwner } = await supabaseAdmin
+    .from('profiles')
+    .select('name, email')
+    .eq('id', appointment.business_id)
+    .eq('role', 'business')
+    .single();
+
   if (!businessOwner) return false;
   
   const subject = '⏰ Tomorrow\'s Appointment Reminder';
@@ -505,16 +513,19 @@ const scheduleReminders = () => {
       const tomorrowEnd = new Date(tomorrow);
       tomorrowEnd.setHours(23, 59, 59, 999);
       
-      // Find appointments for tomorrow that are confirmed
-      const upcomingAppointments = await Appointment.find({
-        date: { $gte: tomorrow, $lte: tomorrowEnd },
-        status: 'confirmed',
-        reminderSent: { $ne: true }
-      });
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
       
-      console.log(`Found ${upcomingAppointments.length} appointments for tomorrow`);
+      // Find appointments for tomorrow that are confirmed and haven't been reminded
+      const { data: upcomingAppointments } = await supabaseAdmin
+        .from('appointments')
+        .select('*')
+        .eq('date', tomorrowStr)
+        .eq('status', 'confirmed')
+        .eq('reminder_sent', false);
       
-      for (const appointment of upcomingAppointments) {
+      console.log(`Found ${upcomingAppointments?.length || 0} appointments for tomorrow`);
+      
+      for (const appointment of (upcomingAppointments || [])) {
         // Send reminder to client
         await sendClientReminder(appointment);
         
@@ -522,8 +533,10 @@ const scheduleReminders = () => {
         await sendBusinessOwnerReminder(appointment);
         
         // Mark reminder as sent
-        appointment.reminderSent = true;
-        await appointment.save();
+        await supabaseAdmin
+          .from('appointments')
+          .update({ reminder_sent: true })
+          .eq('id', appointment.id);
       }
     } catch (error) {
       console.error('Error sending reminders:', error);

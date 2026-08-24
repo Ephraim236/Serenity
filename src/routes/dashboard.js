@@ -1,30 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
-const Appointment = require('../models/Appointment');
-const User = require('../models/User');
-const Service = require('../models/Service');
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const { authenticate } = require('../middleware/auth');
 const { sendClientBookingConfirmation, sendBusinessOwnerNotification, sendBookingApprovedNotification } = require('../services/emailService');
-
-// Check if database is connected
-const isDBConnected = () => mongoose.connection.readyState === 1;
-
-// Middleware to verify JWT
-const authenticate = (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
-};
 
 // Create a new appointment (booking)
 router.post('/appointments', authenticate, async (req, res) => {
@@ -34,76 +12,56 @@ router.post('/appointments', authenticate, async (req, res) => {
     if (!businessId) {
       return res.status(400).json({ error: 'Business ID is required' });
     }
-    
-    // Check if database is connected
-    if (!isDBConnected()) {
-      // Return demo success without database
-      return res.status(201).json({
-        message: 'Booking created successfully (demo mode)',
-        appointment: {
-          _id: 'demo-' + Date.now(),
-          service,
-          specialist,
-          date,
-          time,
-          price: parseFloat(price) || 0,
-          clientName,
-          clientEmail,
-          clientPhone,
-          status: 'pending'
-        }
-      });
-    }
-    
-    // Verify the business exists (or allow demo businesses)
-    let business = null;
-    try {
-      business = await User.findOne({ _id: businessId, role: 'business' });
-    } catch (e) {
-      // MongoDB might not be connected, allow demo businesses
-    }
-    
-    const demoBusinesses = ['demo-business-1', 'demo-business-2', 'demo-business-3'];
-    if (!business && !demoBusinesses.includes(businessId)) {
+
+    // Verify business exists
+    const { data: business } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', businessId)
+      .eq('role', 'business')
+      .single();
+
+    if (!business) {
       return res.status(400).json({ error: 'Invalid business' });
     }
-    
-    // Try to save to MongoDB if connected, otherwise return success
-    try {
-      const appointment = new Appointment({
-        user: req.user.id,
-        business: businessId,
+
+    const { data: appointment, error } = await supabaseAdmin
+      .from('appointments')
+      .insert({
+        user_id: req.user.id,
+        business_id: businessId,
         service,
-        serviceId: serviceId || undefined,
+        service_id: serviceId || null,
         specialist,
-        date: new Date(date),
+        date: new Date(date).toISOString().split('T')[0],
         time,
         price: parseFloat(price) || 0,
         notes,
-        clientName,
-        clientEmail,
-        clientPhone,
+        client_name: clientName,
+        client_email: clientEmail,
+        client_phone: clientPhone,
         status: 'pending'
-      });
-      
-      await appointment.save();
-      
-      // Send confirmation emails asynchronously (don't wait)
-      sendClientBookingConfirmation(appointment).catch(err => 
-        console.error('Failed to send client confirmation email:', err)
-      );
-      sendBusinessOwnerNotification(appointment).catch(err => 
-        console.error('Failed to send business owner notification:', err)
-      );
-    } catch (dbError) {
-      // MongoDB not connected, return demo success
-      console.log('MongoDB not connected, booking saved in demo mode');
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Create appointment error:', error);
+      return res.status(500).json({ error: 'Failed to create appointment' });
     }
+
+    // Send confirmation emails asynchronously
+    sendClientBookingConfirmation(appointment).catch(err => 
+      console.error('Failed to send client confirmation email:', err)
+    );
+    sendBusinessOwnerNotification(appointment).catch(err => 
+      console.error('Failed to send business owner notification:', err)
+    );
     
     res.status(201).json({
       message: 'Booking created successfully',
       appointment: {
-        _id: 'demo-' + Date.now(),
+        id: appointment.id,
         service,
         specialist,
         date,
@@ -124,132 +82,125 @@ router.post('/appointments', authenticate, async (req, res) => {
 // Get dashboard stats
 router.get('/stats', authenticate, async (req, res) => {
   try {
-    // Check if database is connected
-    if (!isDBConnected()) {
-      console.log('Database not connected, returning demo data');
-      return res.json({
-        stats: {
-          totalRevenue: 0,
-          totalAppointments: 0,
-          activeClients: 0,
-          todayAppointments: 0,
-          growth: 0
-        },
-        recentAppointments: []
-      });
-    }
-    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Get counts
-    const totalClients = await User.countDocuments({ role: 'client' });
-    const totalAppointments = await Appointment.countDocuments();
-    const todayAppointments = await Appointment.countDocuments({
-      date: { $gte: today, $lt: tomorrow }
-    });
+    const todayStr = today.toISOString().split('T')[0];
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-    // Calculate revenue (completed appointments)
-    const revenueResult = await Appointment.aggregate([
-      { $match: { status: 'completed' } },
-      { $group: { _id: null, total: { $sum: '$price' } } }
-    ]);
-    const totalRevenue = revenueResult[0]?.total || 0;
+    // Get counts
+    const { count: totalClients } = await supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'client');
+
+    const { count: totalAppointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: todayAppointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .gte('date', todayStr)
+      .lt('date', tomorrowStr);
+
+    // Get total revenue from completed appointments
+    const { data: revenueData } = await supabaseAdmin
+      .from('appointments')
+      .select('price')
+      .eq('status', 'completed');
+
+    const totalRevenue = revenueData?.reduce((sum, apt) => sum + (apt.price || 0), 0) || 0;
 
     // Get recent appointments
-    const recentAppointments = await Appointment.find()
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+    const { data: recentAppointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
 
-    // Calculate growth (compare with previous month)
+    // Calculate growth
     const lastMonth = new Date(today);
     lastMonth.setMonth(lastMonth.getMonth() - 1);
-    const lastMonthAppointments = await Appointment.countDocuments({
-      createdAt: { $lt: lastMonth }
-    });
-    const currentMonthAppointments = await Appointment.countDocuments({
-      createdAt: { $gte: lastMonth }
-    });
-    const growth = lastMonthAppointments > 0 
-      ? ((currentMonthAppointments - lastMonthAppointments) / lastMonthAppointments * 100).toFixed(1)
+
+    const { count: lastMonthCount } = await supabaseAdmin
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .lt('created_at', lastMonth.toISOString());
+
+    const { count: currentMonthCount } = await supabaseAdmin
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', lastMonth.toISOString());
+
+    const growth = lastMonthCount > 0 
+      ? ((currentMonthCount - lastMonthCount) / lastMonthCount * 100).toFixed(1)
       : 0;
 
     res.json({
       stats: {
         totalRevenue: totalRevenue.toFixed(2),
-        totalAppointments,
-        activeClients: totalClients,
-        todayAppointments,
+        totalAppointments: totalAppointments || 0,
+        activeClients: totalClients || 0,
+        todayAppointments: todayAppointments || 0,
         growth: parseFloat(growth)
       },
-      recentAppointments
+      recentAppointments: recentAppointments || []
     });
   } catch (err) {
     console.error('Dashboard stats error:', err);
-    // Return empty data if database is not available
-    res.json({
-      stats: {
-        totalRevenue: 0,
-        totalAppointments: 0,
-        activeClients: 0,
-        todayAppointments: 0,
-        growth: 0
-      },
-      recentAppointments: []
-    });
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
   }
 });
 
 // Get revenue data for charts
 router.get('/revenue', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
-
     const { period = '7' } = req.query;
     const days = parseInt(period);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
 
-    const revenueData = await Appointment.aggregate([
-      {
-        $match: {
-          status: 'completed',
-          date: { $gte: startDate }
-        }
-      },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          revenue: { $sum: '$price' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('date, price')
+      .eq('status', 'completed')
+      .gte('date', startDateStr);
 
-    // Format for chart
-    const formatted = revenueData.map(item => ({
-      name: new Date(item._id).toLocaleDateString('en-US', { weekday: 'short' }),
-      revenue: item.revenue
+    // Group by date
+    const revenueMap = new Map();
+    for (let i = 0; i < days; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      revenueMap.set(d.toISOString().split('T')[0], 0);
+    }
+
+    (appointments || []).forEach(apt => {
+      const dateStr = apt.date;
+      if (revenueMap.has(dateStr)) {
+        revenueMap.set(dateStr, revenueMap.get(dateStr) + (apt.price || 0));
+      }
+    });
+
+    const formatted = Array.from(revenueMap.entries()).reverse().map(([date, revenue]) => ({
+      name: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+      revenue
     }));
 
     res.json(formatted);
   } catch (err) {
-    // Return empty data if database error
+    console.error('Revenue error:', err);
     res.json([]);
   }
 });
 
-// Get staff utilization
+// Get staff utilization (returns static data for now)
 router.get('/staff', authenticate, async (req, res) => {
   try {
-    // For demo, return sample staff data
-    // In production, this would come from a Staff model
     res.json([
       { name: 'Sarah J.', role: 'Skin', value: 85 },
       { name: 'Michael C.', role: 'Massage', value: 65 },
@@ -264,22 +215,18 @@ router.get('/staff', authenticate, async (req, res) => {
 // Get today's appointments
 router.get('/appointments/today', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayStr = today.toISOString().split('T')[0];
 
-    const appointments = await Appointment.find({
-      date: { $gte: today, $lt: tomorrow }
-    }).sort({ time: 1 }).lean();
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*')
+      .eq('date', todayStr)
+      .order('time', { ascending: true });
 
-    res.json(appointments);
+    res.json(appointments || []);
   } catch (err) {
-    // Return empty data
     res.json([]);
   }
 });
@@ -287,17 +234,14 @@ router.get('/appointments/today', authenticate, async (req, res) => {
 // Get all appointments
 router.get('/appointments/all', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*')
+      .order('date', { ascending: false })
+      .order('time', { ascending: true });
 
-    const appointments = await Appointment.find()
-      .sort({ date: -1, time: 1 })
-      .lean();
-
-    res.json(appointments);
+    res.json(appointments || []);
   } catch (err) {
-    // Return empty data
     res.json([]);
   }
 });
@@ -305,22 +249,20 @@ router.get('/appointments/all', authenticate, async (req, res) => {
 // Get appointments by client email
 router.get('/appointments/client', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
-
     const { email } = req.query;
     if (!email) {
       return res.json([]);
     }
-    
-    const appointments = await Appointment.find({ clientEmail: email })
-      .sort({ date: -1, time: 1 })
-      .lean();
 
-    res.json(appointments);
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*')
+      .eq('client_email', email)
+      .order('date', { ascending: false })
+      .order('time', { ascending: true });
+
+    res.json(appointments || []);
   } catch (err) {
-    // Return empty data
     res.json([]);
   }
 });
@@ -328,81 +270,71 @@ router.get('/appointments/client', authenticate, async (req, res) => {
 // Get appointments by date
 router.get('/appointments/by-date', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
-
     const { date } = req.query;
     if (!date) {
       return res.json([]);
     }
-    
+
     const startDate = new Date(date + 'T00:00:00');
     const endDate = new Date(date + 'T23:59:59');
-    
-    const appointments = await Appointment.find({
-      date: { $gte: startDate, $lte: endDate }
-    })
-    .sort({ time: 1 })
-    .lean();
 
-    res.json(appointments);
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('*')
+      .gte('date', startDate.toISOString().split('T')[0])
+      .lte('date', endDate.toISOString().split('T')[0])
+      .order('time', { ascending: true });
+
+    res.json(appointments || []);
   } catch (err) {
     console.error('Error fetching appointments by date:', err);
-    res.json([]);
+    res.status(500).json({ error: 'Failed to fetch appointments' });
   }
 });
 
 // Get booked appointments by business and date
 router.get('/appointments/booked', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
-
     const { businessId, date } = req.query;
     
     if (!businessId || !date) {
       return res.json([]);
     }
-    
-    const appointments = await Appointment.find({
-      business: businessId,
-      date: {
-        $gte: new Date(date + 'T00:00:00'),
-        $lte: new Date(date + 'T23:59:59')
-      },
-      status: { $in: ['pending', 'confirmed'] }
-    })
-    .select('time status')
-    .lean();
-    
-    res.json(appointments);
+
+    const dateStr = new Date(date + 'T00:00:00').toISOString().split('T')[0];
+
+    const { data: appointments } = await supabaseAdmin
+      .from('appointments')
+      .select('time, status')
+      .eq('business_id', businessId)
+      .eq('date', dateStr)
+      .in('status', ['pending', 'confirmed']);
+
+    res.json(appointments || []);
   } catch (err) {
     console.error('Error fetching booked slots:', err);
-    res.json([]);
+    res.status(500).json({ error: 'Failed to fetch booked slots' });
   }
 });
 
 // Update appointment status
 router.patch('/appointments/:id', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.status(503).json({ error: 'Database not connected' });
-    }
-
+    const { id } = req.params;
     const { status } = req.body;
-    const appointment = await Appointment.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
 
-    if (!appointment) {
+    const { data: appointment, error } = await supabaseAdmin
+      .from('appointments')
+      .update({ status, updated_at: new Date() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
-    // Send email notification if booking is approved (async, don't wait)
+    // Send email notification if booking is approved
     if (status === 'confirmed') {
       sendBookingApprovedNotification(appointment).catch(err => 
         console.error('Failed to send confirmation email:', err)
@@ -411,6 +343,7 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
 
     res.json(appointment);
   } catch (err) {
+    console.error('Update appointment error:', err);
     res.status(500).json({ error: 'Failed to update appointment' });
   }
 });
@@ -418,13 +351,14 @@ router.patch('/appointments/:id', authenticate, async (req, res) => {
 // Delete appointment
 router.delete('/appointments/:id', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.status(503).json({ error: 'Database not connected' });
-    }
+    const { id } = req.params;
 
-    const appointment = await Appointment.findByIdAndDelete(req.params.id);
+    const { error } = await supabaseAdmin
+      .from('appointments')
+      .delete()
+      .eq('id', id);
 
-    if (!appointment) {
+    if (error) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
@@ -437,17 +371,15 @@ router.delete('/appointments/:id', authenticate, async (req, res) => {
 // Get all services
 router.get('/services', authenticate, async (req, res) => {
   try {
-    if (!isDBConnected()) {
-      return res.json([]);
-    }
+    const { data: services } = await supabaseAdmin
+      .from('services')
+      .select('id, name, description, category, duration, price, image, average_rating, review_count, business_name')
+      .eq('is_active', true);
 
-    const services = await Service.find({ isActive: true })
-      .select('name description category duration price image averageRating reviewCount businessName')
-      .lean();
-    res.json(services);
+    res.json(services || []);
   } catch (err) {
-    // Return empty array if database error
-    res.json([]);
+    console.error('Error fetching services:', err);
+    res.status(500).json({ error: 'Failed to fetch services' });
   }
 });
 
